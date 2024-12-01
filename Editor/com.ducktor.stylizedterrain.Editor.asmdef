@@ -1,0 +1,18 @@
+{
+    "name": "com.ducktor.stylizedterrain.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:390881a72e50d57458cecd20eb6edfa2"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
