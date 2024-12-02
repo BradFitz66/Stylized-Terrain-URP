@@ -6,7 +6,8 @@ A custom terrain solution for stylized terrain in Unity, inspired by the work of
 Package manager -> click plus icon -> add git url -> https://github.com/BradFitz66/Stylized-Terrain-URP.git 
 
 # Usage
-* Attach the MarchingSquaresTerrain script to an empty game object. 
+* Attach the MarchingSquaresTerrain script to an empty game object. Empty MUST be at 0,0,0 or it will cause issues.
+* Put a material in the terrain material field on the Marching Squares Terrain script. You can make your own material (use stylized terrain shader, or make your own) or use the one that comes with the package called "Terrain". If you can't see the material, make sure you click the dashed out eye icon in the top right corner of the search dialog box.
 * Use chunk tool to add new chunks. The first chunk can be added anywhere while subsequent chunks must be adjacent to an existing chunk
 * Use sculpting and texturing tool to manipulate the terrain to your desire
 
