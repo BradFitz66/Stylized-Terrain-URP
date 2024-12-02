@@ -170,6 +170,10 @@ public class TextureBrush : TerrainTool
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000, 1 << t.gameObject.layer);
+        if (!hit)
+        {
+            Debug.Log("No hit");
+        }
         mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
 
         for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
@@ -179,15 +183,20 @@ public class TextureBrush : TerrainTool
                 Vector3 p = new Vector3(x,0, y);
                 Vector3 mouseOffset = mousePosition + p;
                 //Snap to cell size
-                Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
                 //Get chunk position at mouseOffset
                 Vector2Int chunk = new Vector2Int(
                     Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
                     Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
                 );
+                float wX = (chunk.x * (t.dimensions.x - 1)) + x;
+                float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
+                Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld))
+
+                bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y),cellWorld) <= brushSize / 2;
+
+                if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld) && insideRadius)
                 {
                     selectedCells[cellWorld] = chunk;
                 }

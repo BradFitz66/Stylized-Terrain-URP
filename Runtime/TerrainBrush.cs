@@ -2,7 +2,7 @@
 using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.VisualScripting;
+using LibNoise.Operator;
 
 [System.Serializable]
 public class TerrainBrush : TerrainTool
@@ -221,7 +221,12 @@ public class TerrainBrush : TerrainTool
                         Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
                     );
 
-                    if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld))
+                    float wX = (chunk.x * (t.dimensions.x - 1)) + x;
+                    float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
+
+                    bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= brushSize / 2;
+
+                    if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld) && insideRadius)
                     {
                         selectedCells[cellWorld] = chunk;
                     }
