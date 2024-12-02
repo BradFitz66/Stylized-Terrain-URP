@@ -877,23 +877,30 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public void GenerateHeightmap(NoiseSettings ns)
     {
-        heightMap = new float[terrain.dimensions.z * terrain.dimensions.x];
         for (int z = 0; z < terrain.dimensions.z; z++)
         {
             for (int x = 0; x < terrain.dimensions.x; x++)
             {
-                LibNoise.Generator.RidgedMultifractal ridged = new LibNoise.Generator.RidgedMultifractal(
+                LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
                     ns.frequency,
                     ns.lacunarity,
+                    ns.persistence,
                     ns.octaves,
                     ns.seed,
                     LibNoise.QualityMode.High
                 );
+                var point = new Vector3(x, 0, z);
                 //Convert local coordinates (0 - terrain.dimensions) to world coordinates (x - terrain.dimensions * cellSize)
-                float wX = (x + (int)transform.position.x) * ns.scale + ns.offset.x;
-                float wZ = (z + (int)transform.position.z) * ns.scale + ns.offset.y;
+                float wX = (chunkPosition.x * (terrain.dimensions.x - 1)) + x;
+                float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
 
-                terrain.SetHeight(chunkPosition, x, z, (float)ridged.GetValue(wX, wZ, 0) * ns.amplitude);
+                float noiseValue = (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
+                //Quantize noiseValue based on terrain.heightBanding
+                if (noiseValue != 0) 
+                    noiseValue = Mathf.Round(noiseValue * terrain.heightBanding) / terrain.heightBanding;
+
+
+                heightMap[getIndex(z, x)] = noiseValue;
             }
         }
         regenerateAllCells();

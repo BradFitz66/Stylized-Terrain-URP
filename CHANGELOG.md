@@ -10,3 +10,12 @@ ToDo for future releases:
 * Look into using unity jobs/DOTs for faster mesh generation 
 * Better terrain texture handling. More layers and ability to change how different textures transition into others
 * Mesh simplification post-process step after generating mesh to avoid unneccesary geometry
+
+
+# 0.0.4 
+Bug fixes related to terrain generation via noise
+
+Changes:
+* Fixed chunk coordinates to world coordinates conversion in GenerateHeightmap that caused inconsistences in height at chunk borders
+* Changed GenerateHeightmap to modify chunk's heightmap directly instead of using SetHeight in MarchingSquareTerrain (faster with no downsides thanks to the first fix)
+

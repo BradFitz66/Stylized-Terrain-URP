@@ -1,7 +1,5 @@
 using UnityEngine;
 using UnityEditor;
-using JetBrains.Annotations;
-using System.Collections.Generic;
 
 
 [CustomEditor(typeof(MarchingSquaresTerrain))]
@@ -65,6 +63,12 @@ public class MarchingSquaresTerrainEditor : Editor
         {
             currentToolInstance = (TerrainTool)currentTool.objectReferenceValue;
             currentToolInstance.ToolSelected();
+        }
+        if (terrainMaterial.objectReferenceValue == null)
+        {
+            //Check current path
+            string path = AssetDatabase.GetAssetPath(t);
+            Debug.Log(path);
         }
     }
 
