@@ -15,6 +15,8 @@ Package manager -> click plus icon -> add git url -> https://github.com/BradFitz
 There are certain conditions where the geometry won't generate properly and create a hole in the terrain. In these cases, just manipulate the affected geometry up and down a bit more until it fixes itself.
 I'm not sure what causes this bug but I guess it's some sort of rounding issue in the code somewehre.
 
+# Issues
+* File system is a mess. Brush scripts are in runtime to avoid assembly definition issues, despite not being runtime scripts
 
 # Credits
 This project wouldn't have been possible without @Jackachulian, whose code I ported from Godot to Unity in order to make the mesh generator.
