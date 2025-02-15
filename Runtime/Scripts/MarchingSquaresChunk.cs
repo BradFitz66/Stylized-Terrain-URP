@@ -6,8 +6,15 @@ public struct cellGeometryData
     public List<Vector3> vertices;
     public List<Vector2> uvs;
     public List<Color> colors;
+
+}
+[System.Serializable]
+public struct DetailObject
+{
+    public Matrix4x4 trs;
 }
 
+[ExecuteInEditMode]
 public class MarchingSquaresChunk : MonoBehaviour
 {
 
@@ -16,8 +23,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     public List<Color> colors;
     public List<int> triangles;
     public List<Vector2> uvs;
-
-
+    public List<DetailObject> detailObjects;    
 
     public MarchingSquaresTerrain terrain;
     public Vector2Int chunkPosition;
@@ -543,6 +549,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         dy = pointHeights[(r + 2) % 4];
         cy = pointHeights[(r + 3) % 4];
     }
+
 
     void AddFullFloor()
     {

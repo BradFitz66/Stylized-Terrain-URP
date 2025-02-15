@@ -1,8 +1,7 @@
-﻿using UnityEngine;
+﻿#if UNITY_EDITOR
+using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
-using System.Linq;
-using LibNoise.Operator;
 
 [System.Serializable]
 public class TerrainBrush : TerrainTool
@@ -23,7 +22,7 @@ public class TerrainBrush : TerrainTool
     float dragHeight = 0;
     float hoveredCellHeight = 0;
 
-    float brushSize = 1;
+    float brushSize = 2;
 
     //cell world position, chunkPos
     Dictionary<Vector3, Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
@@ -188,13 +187,13 @@ public class TerrainBrush : TerrainTool
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
-        bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1 << t.gameObject.layer);
+        bool hit = Physics.Raycast(ray, out RaycastHit hitInfo,100, 1 << t.gameObject.layer);
         mousePosition = hit ? new Vector3(hitInfo.point.x,0,hitInfo.point.z) : ray.GetPoint(distance);
 
         if (Event.current.type == EventType.ScrollWheel)
         {
             brushSize += -Event.current.delta.y * 0.1f;
-            brushSize = Mathf.Clamp(brushSize, 1, 100);
+            brushSize = Mathf.Clamp(brushSize, 2, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
@@ -250,3 +249,4 @@ public class TerrainBrush : TerrainTool
         }
     }
 }
+#endif

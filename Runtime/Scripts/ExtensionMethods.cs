@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static UnityEngine.BoundsInt;
 
 public static class ExtensionMethods
 {
@@ -59,6 +60,17 @@ public static class ExtensionMethods
         {
             list.Add(item);
         }
+    }
+
+    //Iterator for bounds (loop over each edge)
+    public static PositionEnumerator allPositionsWithin(this Bounds bounds)
+    {
+        //Convert to BoundsInt
+        BoundsInt b = new BoundsInt(
+            Vector3Int.FloorToInt(bounds.min),
+            Vector3Int.FloorToInt(bounds.size)
+        );
+        return b.allPositionsWithin;
     }
 
 }

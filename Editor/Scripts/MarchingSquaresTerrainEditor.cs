@@ -21,6 +21,7 @@ public class MarchingSquaresTerrainEditor : Editor
     SerializedProperty terrainMaterial;
     SerializedProperty noiseSettings;
     SerializedProperty heightBanding;
+    SerializedProperty detailDensity;
 
     SerializedProperty lastTool;
     SerializedProperty currentTool;
@@ -42,12 +43,12 @@ public class MarchingSquaresTerrainEditor : Editor
         currentTool = serializedObject.FindProperty("currentTool");
         noiseSettings = serializedObject.FindProperty("noiseSettings");
         heightBanding = serializedObject.FindProperty("heightBanding");
+        detailDensity = serializedObject.FindProperty("detailDensity");
 
-        if (tools.arraySize == 0)
+        if (tools.arraySize != 4)
         {
-            tools.arraySize = 3;
+            tools.arraySize = 4;
         }
-
         if (tools.GetArrayElementAtIndex(0).objectReferenceValue == null)
             tools.GetArrayElementAtIndex(0).objectReferenceValue = CreateInstance<ChunkBrush>();
 
@@ -56,6 +57,9 @@ public class MarchingSquaresTerrainEditor : Editor
 
         if (tools.GetArrayElementAtIndex(2).objectReferenceValue == null)
             tools.GetArrayElementAtIndex(2).objectReferenceValue = CreateInstance<TextureBrush>();
+
+        if (tools.GetArrayElementAtIndex(3).objectReferenceValue == null || tools.GetArrayElementAtIndex(3).objectReferenceValue.GetType() != typeof(DetailTool))
+            tools.GetArrayElementAtIndex(3).objectReferenceValue = CreateInstance<DetailTool>();
 
 
         serializedObject.ApplyModifiedProperties();
@@ -84,22 +88,37 @@ public class MarchingSquaresTerrainEditor : Editor
         EditorGUILayout.PropertyField(mergeThreshold);
         EditorGUILayout.PropertyField(terrainMaterial);
         EditorGUILayout.PropertyField(noiseSettings);
-        EditorGUILayout.PropertyField(heightBanding);//
+        EditorGUILayout.PropertyField(heightBanding);
+        EditorGUILayout.PropertyField(detailDensity);
+
         if (GUILayout.Button("Generate terrain"))
         {
             t.GenerateTerrain();
         }
+        if(GUILayout.Button("Clear details"))
+        {
+            t.ClearDetails();
+        }
+        if (GUILayout.Button("Apply detail density"))
+        {
+            //Popup window telling user that this will erase all detail
+            if (EditorUtility.DisplayDialog("Apply detail density", "This will erase all details on the terrain", "Ok", "Cancel"))
+            {
+                t.UpdateDensity();
+            }
+        }
+
 
         //Space
         EditorGUILayout.Space();
 
         //Toolbar 
-        selectedToolIndex.intValue = GUILayout.Toolbar(selectedToolIndex.intValue, new string[] { "Chunk brush", "Sculpt brush", "Texture brush" });
-
+        selectedToolIndex.intValue = GUILayout.Toolbar(selectedToolIndex.intValue, new string[] { "Chunk brush", "Sculpt brush", "Texture brush", "Detail brush" });
         TerrainTool selectingTool = (TerrainTool)tools.GetArrayElementAtIndex(selectedToolIndex.intValue).objectReferenceValue;
         if (selectingTool != null)
         {
             selectingTool.t = t;
+            selectingTool.serializedT = serializedObject;
             if (currentToolInstance != selectingTool)
             {
                 if (currentToolInstance != null && lastToolInstance != currentToolInstance)

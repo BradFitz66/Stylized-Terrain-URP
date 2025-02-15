@@ -1,9 +1,11 @@
-﻿using UnityEngine;
+﻿using UnityEditor;
+using UnityEngine;
 
 [System.Serializable]
 public class TerrainTool : ScriptableObject
 {
     public MarchingSquaresTerrain t;
+    public SerializedObject serializedT;
     public virtual void Update() { }
 
     public virtual void OnMouseDown(int button = 0) { }
@@ -14,7 +16,7 @@ public class TerrainTool : ScriptableObject
 
     public virtual void DrawHandles() { }
 
-    public virtual void OnInspectorGUI()
+    public virtual void OnInspectorGUI() 
     {
     }
 

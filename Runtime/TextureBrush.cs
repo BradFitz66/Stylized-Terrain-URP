@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿#if UNITY_EDITOR
+using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 
@@ -24,7 +25,7 @@ public class TextureBrush : TerrainTool
 
     int selectedTexture = 0;
     float height = 0;
-    float brushSize = 1;
+    float brushSize = 2;
 
     //cell world position, chunkPos
     Dictionary<Vector3,Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
@@ -268,5 +269,4 @@ public class TextureBrush : TerrainTool
         EditorGUILayout.EndHorizontal();
     }
 }
-
-
+#endif
