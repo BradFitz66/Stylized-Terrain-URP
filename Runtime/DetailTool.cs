@@ -20,6 +20,8 @@ public class DetailTool : TerrainTool
     float detailDensity = 1f;
     float hoveredCellHeight = 0;
     float brushSize = 2;
+    float normalOffset = 0.5f;
+    float size = 1;
 
     //cell world position, chunkPos
     Dictionary<Vector3, Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
@@ -75,8 +77,11 @@ public class DetailTool : TerrainTool
         detailMesh = serializedT.FindProperty("detailMesh");
         detailMaterial = serializedT.FindProperty("detailMaterial");
         detailDensity = EditorGUILayout.FloatField(detailDensityLabel, detailDensity);
+        normalOffset = EditorGUILayout.FloatField("Normal Offset", normalOffset);
+        size = EditorGUILayout.FloatField("Size", size);
         detailMesh.objectReferenceValue = EditorGUILayout.ObjectField("Detail Mesh", detailMesh.objectReferenceValue, typeof(Mesh), false);
         detailMaterial.objectReferenceValue = EditorGUILayout.ObjectField("Detail Material", detailMaterial.objectReferenceValue, typeof(Material), false);
+
         serializedT.ApplyModifiedProperties();
     }
 
@@ -138,7 +143,7 @@ public class DetailTool : TerrainTool
                             Mathf.FloorToInt((cellWorld.x - c.transform.position.x) / t.cellSize.x),
                             Mathf.FloorToInt((cellWorld.z - c.transform.position.z) / t.cellSize.y)
                         );
-                        t.AddDetail(localCellPos.x, localCellPos.y, mouseOffset + p,c);
+                        t.AddDetail(localCellPos.x, localCellPos.y, size, normalOffset, mouseOffset + p,c);
                     }
                 }
             }

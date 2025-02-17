@@ -371,6 +371,7 @@
     "m_SourceType": 0,
     "m_FunctionName": "MainLightShadows",
     "m_FunctionSource": "e1b0a0f6bb688de42b491baa01137aa8",
+    "m_FunctionSourceUsePragmas": true,
     "m_FunctionBody": "Enter function body here..."
 }
 

@@ -12,6 +12,8 @@ public struct cellGeometryData
 public struct DetailObject
 {
     public Matrix4x4 trs;
+    public Vector3 normal;
+    public float normalOffset;
 }
 
 [ExecuteInEditMode]

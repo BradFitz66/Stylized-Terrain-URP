@@ -32,7 +32,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     ComputeBuffer detailBuffer;
     ComputeBuffer argsBuffer;
-    List<DetailObject> allDetail = new List<DetailObject>();
+    [SerializeField]
+    List<DetailObject> allDetail;
     uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
     MaterialPropertyBlock mpb;
 
@@ -83,13 +84,23 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     private void Awake()
     {
-        args = new uint[5] { detailMesh.GetIndexCount(0), 0, detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
+
+        if (allDetail == null)
+        {
+            print("Creating new detail list");
+            allDetail = new List<DetailObject>();
+        }
+        args = new uint[5] { detailMesh.GetIndexCount(0), (uint)allDetail.Count, detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
         if (argsBuffer == null)
         {
             argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
             argsBuffer.SetData(args);
         }
-        mpb = new MaterialPropertyBlock();
+        if (mpb == null)
+        {
+            mpb = new MaterialPropertyBlock();
+        }
+
     }
 
     void InitializeBuffers()
@@ -105,7 +116,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (mpb == null)
             mpb = new MaterialPropertyBlock();
         if (allDetail.Count == 0)
+        {
+            print("No details to update");
             return;
+        }
 
         detailBuffer?.Release();
         detailBuffer = new ComputeBuffer(allDetail.Count, Marshal.SizeOf<DetailObject>());
@@ -123,12 +137,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             detailBuffer.Release();
     }
 
-    private void OnEnable()
-    {
-        UpdateDetailBuffer();
-    }
-
-    public void AddDetail(int x, int y, Vector3 detailPos,MarchingSquaresChunk chunk)
+    public void AddDetail(int x, int y, float size,float normalOffset,Vector3 detailPos,MarchingSquaresChunk chunk)
     {
         //Return if the detail is out of bounds
         if (!totalTerrainSize.Contains(detailPos))
@@ -138,7 +147,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Parallel.ForEach(allDetail, (d) =>
         {
             Vector3 dPosXZ = new Vector3(detailPos.x, 0, detailPos.z);
-            Vector3 detailPosXZ = new Vector3(d.trs.GetColumn(3).x, 0, d.trs.GetColumn(3).z);
+            
+            Vector3 detailPosXZ = new Vector3(d.trs.GetPosition().x, 0, d.trs.GetPosition().z);
             if (Vector3.Distance(detailPosXZ, dPosXZ) <= currentDetailDensity)
             {
                 canPlace = false;
@@ -157,12 +167,14 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         float height = chunk.heightMap[chunk.getIndex(cellPos.y, cellPos.x)];
 
-        detailPos.y = height;
+        detailPos.y = height + normalOffset;
 
-        Matrix4x4 trs = Matrix4x4.TRS(detailPos, Quaternion.identity, Vector3.one * 10);
+        Matrix4x4 trs = Matrix4x4.TRS(detailPos, Quaternion.identity, Vector3.one * size);
         DetailObject detailObject = new DetailObject()
         {
-            trs = trs
+            trs = trs,
+            normal = Vector3.up,
+            normalOffset = normalOffset//Unused in shader
         };
 
         
@@ -245,7 +257,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             );
         }
 
-        UpdateDetailBuffer();
+        UpdateDetailHeight();
 
     }
     public void RemoveChunk(Vector2Int coords)
@@ -442,11 +454,19 @@ public class MarchingSquaresTerrain : MonoBehaviour
     {
         List<DetailObject> newDetailList = new List<DetailObject>();
 
-        //Use unity jobs system to do a raycast for each detail object
+        /*
+         * This is the best way I could easily ensure the height of detail matches height of terrain
+         * We use Unity's job system to raycast downwards from all detail objects to the terrain, 
+         * and set the height of the detail object to the hit point.If the hit point is null, 
+         * we don't add the detail object to the new list.
+         */
+
+        System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+        sw.Start();
+
         var results = new NativeArray<RaycastHit>(allDetail.Count, Allocator.TempJob);
         var commands = new NativeArray<RaycastCommand>(allDetail.Count, Allocator.TempJob);
 
-        //Prepare raycast commands
         for (int i = 0; i < allDetail.Count; i++)
         {
             DetailObject d = allDetail[i];
@@ -462,26 +482,35 @@ public class MarchingSquaresTerrain : MonoBehaviour
             );
         }
 
-        //Execute raycasts
         JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1,default(JobHandle));
 
         handle.Complete();
+        int index = 0;
         foreach (var hit in results) { 
             if (hit.collider != null)
             {
+                DetailObject d = allDetail[index];
                 Vector3 pos = hit.point;
-                Matrix4x4 trs = Matrix4x4.TRS(pos, Quaternion.identity, Vector3.one * 10);
+                Vector3 size = d.trs.lossyScale;
+                Matrix4x4 trs = Matrix4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
                 newDetailList.Add(new DetailObject()
                 {
-                    trs = trs
+                    trs = trs,
+                    normal = hit.normal,
+                    normalOffset = d.normalOffset //Unused in shader. 
                 });
             }
+            index++;
         }
 
         results.Dispose();
         commands.Dispose();
 
         allDetail = newDetailList;
+
+        sw.Stop();
+        print($"Updated detail height in {sw.ElapsedMilliseconds}ms");
+
         UpdateDetailBuffer();
     }
 
@@ -497,7 +526,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDetailBuffer();
     }
     
-    private void LateUpdate()
+    private void Update()
     {
         if (argsBuffer == null || detailBuffer == null) {
             InitializeBuffers();
@@ -520,7 +549,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
             new Bounds(Vector3.zero,new Vector3(1000,1000,1000)),
             bufferWithArgs:argsBuffer,argsOffset:0, properties: mpb
         );
-        print(args[1]);
     }
 
     public void UpdateDensity()
