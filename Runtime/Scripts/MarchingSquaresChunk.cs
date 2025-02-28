@@ -1,14 +1,10 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Burst;
 using Unity.Mathematics;
 using Unity.Profiling;
 using UnityEngine;
-using Codice.CM.Client.Differences.Graphic;
-using System;
 using System.Linq;
-using UnityEngine.UIElements;
 [System.Serializable]
 public struct cellGeometryData
 {
