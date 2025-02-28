@@ -1,5 +1,14 @@
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
+using Unity.Burst;
+using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine;
+using Codice.CM.Client.Differences.Graphic;
+using System;
+using System.Linq;
+using UnityEngine.UIElements;
 [System.Serializable]
 public struct cellGeometryData
 {
@@ -8,535 +17,456 @@ public struct cellGeometryData
     public List<Color> colors;
 
 }
+
+//Job to generate the mesh for this chunk
+
 [System.Serializable]
-public struct DetailObject
-{
-    public Matrix4x4 trs;
-    public Vector3 normal;
-    public float normalOffset;
-}
-
-[ExecuteInEditMode]
-public class MarchingSquaresChunk : MonoBehaviour
+struct GenerateChunkJob : IJobParallelFor
 {
 
-    public Mesh mesh;
-    public List<Vector3> vertices;
-    public List<Color> colors;
-    public List<int> triangles;
-    public List<Vector2> uvs;
-    public List<DetailObject> detailObjects;    
+    [ReadOnly]
+    [DeallocateOnJobCompletion]
+    public NativeArray<float> heightMap;
 
-    public MarchingSquaresTerrain terrain;
-    public Vector2Int chunkPosition;
-
-    public bool higherPolyFloors = true;
-
-    public Texture2D heightMapImage;
-    public float[] heightMap;
-    public bool[] needsUpdate;
-    public Color[] colorMap;
-
-    public int r;
-
-    public Vector2Int cellCoords;
-    public List<bool> cellEdges;
-    public List<float> pointHeights;
-
-    public float ay;
-    public float by;
-    public float cy;
-    public float dy;
-
-    public bool ab;
-    public bool ac;
-    public bool bd;
-    public bool cd;
-
+    public int3 terrainSize;
+    public float2 cellSize;
+    public float mergeThreshold;
 
     bool floorMode;
+    bool wallMode;
 
-    public SerializedDictionary<Vector2Int, cellGeometryData> cellGeometry = new SerializedDictionary<Vector2Int, cellGeometryData>();
-    
+    public bool higherPolyFloors;
+
+    [NativeDisableParallelForRestriction]
+    public NativeList<float3> vertices;
+    [NativeDisableParallelForRestriction]
+    public NativeList<float2> uvs;
+    [NativeDisableParallelForRestriction]
+    public NativeList<int> triangles;
+    [NativeDisableParallelForRestriction]
+    public NativeList<float4> colors;
 
 
-    public void initializeTerrain(bool shouldRegenerate = true)
-    {
-        mesh = new Mesh();
-        cellGeometry = new SerializedDictionary<Vector2Int, cellGeometryData>();
 
-        colorMap = new Color[terrain.dimensions.z * terrain.dimensions.x];
-        //Fill with red
-        for (int z = 0; z < terrain.dimensions.z; z++)
-        {
-            for (int x = 0; x < terrain.dimensions.x; x++)
-            {
-                colorMap[getIndex(x, z)] = new Color(1, 0, 0, 0);
-            }
-        }
-        heightMap = new float[terrain.dimensions.z * terrain.dimensions.x];
-        needsUpdate = new bool[terrain.dimensions.z * terrain.dimensions.x];
-        for (int z = 0; z < terrain.dimensions.z; z++)
-        {
-            for (int x = 0; x < terrain.dimensions.x; x++)
-            {
-                needsUpdate[getIndex(x, z)] = true;
-            }
-        }
+    [NativeDisableParallelForRestriction]
+    [DeallocateOnJobCompletion]
+    public NativeArray<bool> cellEdges;
 
-        regenerateMesh();
+    [NativeDisableParallelForRestriction]
+    [DeallocateOnJobCompletion]
+    public NativeArray<float> pointHeights;
 
-    }
+    [ReadOnly]
+    [DeallocateOnJobCompletion]
+    public NativeArray<Vector4> colorMap;
 
-    public int getIndex(int x, int z)
+    int r;
+
+    float ay;
+    float by;
+    float cy;
+    float dy;
+
+    bool ab;
+    bool ac;
+    bool bd;
+    bool cd;
+
+    Vector2Int cellCoords;
+
+    public int GetIndex(int x, int z)
     {
         //Check if within bounds
-        if (x < 0 || x >= terrain.dimensions.x || z < 0 || z >= terrain.dimensions.z)
+        if (x < 0 || x >= terrainSize.x || z < 0 || z >= terrainSize.z)
         {
             return 0;
         }
 
-        return x + z * terrain.dimensions.x;
+        return x + z * terrainSize.x;
     }
 
-    public void regenerateMesh()
+    Vector2Int GetCoordinates(int index)
     {
-        mesh.Clear();
-        vertices = new List<Vector3>();
-        triangles = new List<int>();
-        colors = new List<Color>();
-        uvs = new List<Vector2>();
-
-        generateTerrainCells();
-
-        mesh.vertices = vertices.ToArray();
-        mesh.triangles = triangles.ToArray();
-        Color[] vertexColors = new Color[mesh.vertices.Length];
-        for (int i = 0; i < colors.Count; i++)
-        {
-            vertexColors[i] = colors[i];
-        }
-        mesh.colors = vertexColors;
-        mesh.uv = uvs.ToArray();
-        mesh.RecalculateNormals();
-
-        MeshRenderer r = gameObject.GetComponent<MeshRenderer>();
-        MeshFilter mf = gameObject.GetComponent<MeshFilter>();
-
-        r.material = terrain.terrainMaterial;
-        mf.sharedMesh = mesh;
-
-        MeshCollider mc = gameObject.GetComponent<MeshCollider>();
-        mc.sharedMesh = mf.sharedMesh;
-
-
+        return new Vector2Int(index / terrainSize.x, index % terrainSize.x);
     }
 
-    public void generateTerrainCells()
+    public void Execute(int index)
     {
-        if (cellGeometry == null)
+        cellCoords = GetCoordinates(index);
+
+        if (cellCoords.x > terrainSize.x - 2 || cellCoords.y > terrainSize.z - 2)
         {
-            cellGeometry = new SerializedDictionary<Vector2Int, cellGeometryData>();
+            return;
         }
 
-        for (int z = 0; z < terrain.dimensions.z - 1; z++)
+
+        int ayIndex = index;
+        int byIndex = GetIndex(cellCoords.y, cellCoords.x + 1);
+        int cyIndex = GetIndex(cellCoords.y + 1, cellCoords.x);
+        int dyIndex = GetIndex(cellCoords.y + 1, cellCoords.x + 1);
+
+        r = 0;
+
+        ay = heightMap[ayIndex];
+        by = heightMap[byIndex];
+        cy = heightMap[cyIndex];
+        dy = heightMap[dyIndex];
+
+        ab = Mathf.Abs(ay - by) < mergeThreshold; // Top Edge
+        ac = Mathf.Abs(ay - cy) < mergeThreshold; // Bottom Edge
+        bd = Mathf.Abs(by - dy) < mergeThreshold; // Right Edge
+        cd = Mathf.Abs(cy - dy) < mergeThreshold; // Left Edge
+
+        //Case 0
+        if (ab && ac && bd && cd)
         {
-            for (int x = 0; x < terrain.dimensions.x - 1; x++)
+            AddFullFloor();
+            return;
+        }
+
+        cellEdges[0] = ab;
+        cellEdges[1] = bd;
+        cellEdges[2] = cd;
+        cellEdges[3] = ac;
+        pointHeights[0] = ay;
+        pointHeights[1] = by;
+        pointHeights[2] = dy;
+        pointHeights[3] = cy;
+
+
+
+        bool caseFound = false;
+
+        for (int i = 0; i < 4; i++)
+        {
+            r = i;
+
+            ab = cellEdges[r];
+            bd = cellEdges[(r + 1) % 4];
+            cd = cellEdges[(r + 2) % 4];
+            ac = cellEdges[(r + 3) % 4];
+
+            ay = pointHeights[r];
+            by = pointHeights[(r + 1) % 4];
+            dy = pointHeights[(r + 2) % 4];
+            cy = pointHeights[(r + 3) % 4];
+
+            caseFound = true;
+
+            //Case 1
+            if (IsHigher(ay, by) && IsHigher(ay, cy) && bd && cd)
             {
-                cellCoords = new Vector2Int(x, z);
+                AddOuterCorner(true, true);
+            }
 
-                if (!needsUpdate[getIndex(z, x)])
-                {
-                    List<Vector3> verts = cellGeometry[cellCoords].vertices;
-                    List<Vector2> uv = cellGeometry[cellCoords].uvs;
-                    List<Color> cols = cellGeometry[cellCoords].colors;
-                    int vertIdx = vertices.Count;
-                    for (int i = 0; i < verts.Count; i += 3)
-                    {
-                        AddFace(
-                            verts[i],
-                            verts[i + 1],
-                            verts[i + 2],
-                            false
-                        );
-                    }
-                    for (int i = 0; i < cols.Count; i++)
-                    {
-                        colors.Add(cols[i]);
-                    }
-                    for (int i = 0; i < uv.Count; i++)
-                    {
-                        uvs.Add(uv[i]);
-                    }
+            //Case 2
+            else if (IsHigher(ay, cy) && IsHigher(by, dy) && ab && cd)
+            {
+                AddEdge(true, true);
+            }
 
-                    continue;
-                }
-                needsUpdate[getIndex(z, x)] = false;
-                cellGeometry[cellCoords] = new cellGeometryData()
-                {
-                    vertices = new List<Vector3>(),
-                    uvs = new List<Vector2>(),
-                    colors = new List<Color>()
-                };
+            //Case 3
+            else if (IsHigher(ay, by) && IsHigher(ay, cy) && IsHigher(by, dy) && cd)
+            {
+                AddEdge(true, true, 0.5f, 1);
+                AddOuterCorner(false, true, true, by);
+            }
+            //Case 4
+            else if (IsHigher(by, ay) && IsHigher(ay, cy) && IsHigher(by, dy) && cd)
+            {
+                AddEdge(true, true, 0, 0.5f);
+                RotateCell(1);
+                AddOuterCorner(false, true, true, cy);
+            }
 
-                r = 0;
+            //Case5
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && IsLower(dy, cy) && IsMerged(by, cy))
+            {
+                AddInnerCorner(true, false);
+                AddDiagonalFloor(by, cy, true, true);
+                RotateCell(2);
+                AddInnerCorner(true, false);
+            }
+            //Case 5.5
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && IsLower(dy, cy) && IsHigher(by, cy))
+            {
+                AddInnerCorner(true, false, true);
+                AddDiagonalFloor(cy, cy, true, true);
 
-                ay = heightMap[getIndex(z, x)];
-                by = heightMap[getIndex(z, x + 1)];
-                cy = heightMap[getIndex(z + 1, x)];
-                dy = heightMap[getIndex(z + 1, x + 1)];
+                RotateCell(2);
+                AddInnerCorner(true, false, true);
 
-                ab = Mathf.Abs(ay - by) < terrain.mergeThreshold; // Top Edge
-                ac = Mathf.Abs(ay - cy) < terrain.mergeThreshold; // Bottom Edge
-                bd = Mathf.Abs(by - dy) < terrain.mergeThreshold; // Right Edge
-                cd = Mathf.Abs(cy - dy) < terrain.mergeThreshold; // Left Edge
+                RotateCell(-1);
+                AddOuterCorner(false, true);
+            }
+            //Case 6
+            else if (IsLower(ay, by) && IsLower(ay, cy) && bd && cd)
+            {
+                AddInnerCorner(true, true);
+            }
 
-                //Case 0
-                if (ab && ac && bd && cd)
-                {
-                    AddFullFloor();
-                    continue;
-                }
+            //Case 7
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, by) && IsHigher(dy, cy) && IsMerged(by, cy))
+            {
 
-                cellEdges = new List<bool> { ab, bd, cd, ac };
-                pointHeights = new List<float> { ay, by, dy, cy };
+                AddInnerCorner(true, false);
+                AddDiagonalFloor(by, cy, true, false);
+                RotateCell(2);
+                AddOuterCorner(false, true);
+            }
+            //Case 8
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, cy) && bd)
+            {
+                AddInnerCorner(true, false, true);
 
+                StartFloor();
+                AddFace(
+                    AddPoint(1, dy, 1),
+                    AddPoint(0.5f, dy, 1, 1, 0),
+                    AddPoint(1, (by + dy) / 2, 0.5f)
+                );
 
+                AddFace(
+                    AddPoint(1, by, 0),
+                    AddPoint(1, (by + dy) / 2, 0.5f),
+                    AddPoint(0.5f, by, 0, 0, 1)
+                );
 
-                bool caseFound = false;
+                AddFace(
+                    AddPoint(0.5f, by, 0, 0, 1),
+                    AddPoint(1, (by + dy) / 2, 0.5f),
+                    AddPoint(0, by, 0.5f, 1, 1)
+                );
 
-                for (int i = 0; i < 4; i++)
-                {
-                    r = i;
+                AddFace(
+                    AddPoint(0.5f, dy, 1, 1, 0),
+                    AddPoint(0, by, 0.5f, 1, 1),
+                    AddPoint(1, (by + dy) / 2, 0.5f)
+                );
+                StartWall();
+                AddFace(
+                    AddPoint(0, by, 0.5f),
+                    AddPoint(0.5f, dy, 1),
+                    AddPoint(0, cy, 0.5f)
+                );
+                AddFace(
+                    AddPoint(0.5f, cy, 1),
+                    AddPoint(0, cy, 0.5f),
+                    AddPoint(0.5f, dy, 1)
+                );
+                StartFloor();
+                AddFace(
+                    AddPoint(0, cy, 1),
+                    AddPoint(0, cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, cy, 1, 0, 1)
+                );
+            }
+            //Case 9
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && cd)
+            {
 
-                    ab = cellEdges[r];
-                    bd = cellEdges[(r + 1) % 4];
-                    cd = cellEdges[(r + 2) % 4];
-                    ac = cellEdges[(r + 3) % 4];
+                AddInnerCorner(true, false, true);
 
-                    ay = pointHeights[r];
-                    by = pointHeights[(r + 1) % 4];
-                    dy = pointHeights[(r + 2) % 4];
-                    cy = pointHeights[(r + 3) % 4];
+                StartFloor();
+                //D Corner
+                AddFace(
+                    AddPoint(1, dy, 1, 0, 0),
+                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
+                    AddPoint(1, dy, 0.5f, 1, 0)
+                );
+                //C Corner
+                AddFace(
+                    AddPoint(0, cy, 1, 0, 0),
+                    AddPoint(0, cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, (dy + cy) / 2, 1)
+                );
 
-                    caseFound = true;
+                //Center floors
+                AddFace(
+                    AddPoint(0, cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, cy, 0, 1, 1),
+                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0)
+                );
 
-                    //Case 1
-                    if (isHigher(ay, by) && isHigher(ay, cy) && bd && cd)
-                    {
-                        AddOuterCorner(true, true);
-                    }
+                AddFace(
+                    AddPoint(1, dy, 0.5f, 1, 0f),
+                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
+                    AddPoint(0.5f, cy, 0, 1, 1)
+                );
 
-                    //Case 2
-                    else if (isHigher(ay, cy) && isHigher(by, dy) && ab && cd)
-                    {
-                        AddEdge(true, true);
-                    }
+                //Walls to upper corner
+                StartWall();
+                AddFace(
+                    AddPoint(0.5f, cy, 0),
+                    AddPoint(0.5f, by, 0),
+                    AddPoint(1, dy, 0.5f)
+                );
 
-                    //Case 3
-                    else if (isHigher(ay, by) && isHigher(ay, cy) && isHigher(by, dy) && cd)
-                    {
-                        AddEdge(true, true, 0.5f, 1);
-                        AddOuterCorner(false, true, true, by);
-                    }
-                    //Case 4
-                    else if (isHigher(by, ay) && isHigher(ay, cy) && isHigher(by, dy) && cd)
-                    {
-                        AddEdge(true, true, 0, 0.5f);
-                        rotateCell(1);
-                        AddOuterCorner(false, true, true, cy);
-                    }
+                AddFace(
+                    AddPoint(1, by, 0.5f),
+                    AddPoint(1, dy, 0.5f),
+                    AddPoint(0.5f, by, 0)
+                );
 
-                    //Case5
-                    else if (isLower(ay, by) && isLower(ay, cy) && isLower(dy, by) && isLower(dy, cy) && isMerged(by, cy))
-                    {
-                        AddInnerCorner(true, false);
-                        AddDiagonalFloor(by, cy, true, true);
-                        rotateCell(2);
-                        AddInnerCorner(true, false);
-                    }
-                    //Case 5.5
-                    else if (isLower(ay, by) && isLower(ay, cy) && isLower(dy, by) && isLower(dy, cy) && isHigher(by, cy))
-                    {
-                        AddInnerCorner(true, false, true);
-                        AddDiagonalFloor(cy, cy, true, true);
+                StartFloor();
+                AddFace(
+                    AddPoint(1, by, 0),
+                    AddPoint(1, by, 0.5f, 0, 1),
+                    AddPoint(0.5f, by, 0, 0, 1)
+                );
+            }
+            //Case 10
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, cy) && bd)
+            {
+                AddInnerCorner(true, false, true, true, false);
 
-                        rotateCell(2);
-                        AddInnerCorner(true, false, true);
+                RotateCell(1);
+                AddEdge(false, true);
+            }
+            //Case 11
+            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, by) && cd)
+            {
+                AddInnerCorner(true, false, true, false, true);
 
-                        rotateCell(-1);
-                        AddOuterCorner(false, true);
-                    }
-                    //Case 6
-                    else if (isLower(ay, by) && isLower(ay, cy) && bd && cd)
-                    {
-                        AddInnerCorner(true, true);
-                    }
+                RotateCell(2);
+                AddEdge(false, true);
+            }
+            //Case 12
+            else if (IsLower(ay, by) && IsLower(by, dy) && IsLower(dy, cy) && IsHigher(cy, ay))
+            {
+                AddInnerCorner(true, false, true, false, true);
 
-                    //Case 7
-                    else if (isLower(ay, by) && isLower(ay, cy) && isHigher(dy, by) && isHigher(dy, cy) && isMerged(by, cy))
-                    {
+                RotateCell(2);
+                AddEdge(false, true, 0, 0.5f);
 
-                        AddInnerCorner(true, false);
-                        AddDiagonalFloor(by, cy, true, false);
-                        rotateCell(2);
-                        AddOuterCorner(false, true);
-                    }
-                    //Case 8
-                    else if (isLower(ay, by) && isLower(ay, cy) && isLower(dy, cy) && bd)
-                    {
-                        AddInnerCorner(true, false, true);
+                RotateCell(1);
+                AddOuterCorner(false, true, true, cy);
+            }
+            //Case 13
+            else if (IsLower(ay, cy) && IsLower(cy, dy) && IsLower(dy, by) && IsHigher(by, ay))
+            {
+                AddInnerCorner(true, false, true, true, false);
 
-                        startFloor();
-                        AddFace(
-                            AddPoint(1, dy, 1),
-                            AddPoint(0.5f, dy, 1, 1, 0),
-                            AddPoint(1, (by + dy) / 2, 0.5f)
-                        );
+                RotateCell(1);
+                AddEdge(false, true, 0.5f, 1);
 
-                        AddFace(
-                            AddPoint(1, by, 0),
-                            AddPoint(1, (by + dy) / 2, 0.5f),
-                            AddPoint(0.5f, by, 0, 0, 1)
-                        );
+                AddOuterCorner(false, true, true, by);
+            }
+            //Case 14
+            else if (IsLower(ay, by) && IsLower(by, cy) && IsLower(cy, dy))
+            {
+                AddInnerCorner(true, false, true, false, true);
 
-                        AddFace(
-                            AddPoint(0.5f, by, 0, 0, 1),
-                            AddPoint(1, (by + dy) / 2, 0.5f),
-                            AddPoint(0, by, 0.5f, 1, 1)
-                        );
+                RotateCell(2);
+                AddEdge(false, true, 0.5f, 1);
 
-                        AddFace(
-                            AddPoint(0.5f, dy, 1, 1, 0),
-                            AddPoint(0, by, 0.5f, 1, 1),
-                            AddPoint(1, (by + dy) / 2, 0.5f)
-                        );
-                        startWall();
-                        AddFace(
-                            AddPoint(0, by, 0.5f),
-                            AddPoint(0.5f, dy, 1),
-                            AddPoint(0, cy, 0.5f)
-                        );
-                        AddFace(
-                            AddPoint(0.5f, cy, 1),
-                            AddPoint(0, cy, 0.5f),
-                            AddPoint(0.5f, dy, 1)
-                        );
-                        startFloor();
-                        AddFace(
-                            AddPoint(0, cy, 1),
-                            AddPoint(0, cy, 0.5f, 0, 1),
-                            AddPoint(0.5f, cy, 1, 0, 1)
-                        );
-                    }
-                    //Case 9
-                    else if (isLower(ay, by) && isLower(ay, cy) && isLower(dy, by) && cd)
-                    {
+                AddOuterCorner(false, true, true, by);
+            }
+            //Case 15
+            else if (IsLower(ay, cy) && IsLower(cy, by) && IsLower(by, dy))
+            {
+                AddInnerCorner(true, false, true, true, false);
 
-                        AddInnerCorner(true, false, true);
+                RotateCell(1);
+                AddEdge(false, true, 0, 0.5f);
 
-                        startFloor();
-                        //D Corner
-                        AddFace(
-                            AddPoint(1, dy, 1, 0, 0),
-                            AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
-                            AddPoint(1, dy, 0.5f, 1, 0)
-                        );
-                        //C Corner
-                        AddFace(
-                            AddPoint(0, cy, 1, 0, 0),
-                            AddPoint(0, cy, 0.5f, 0, 1),
-                            AddPoint(0.5f, (dy + cy) / 2, 1)
-                        );
+                RotateCell(1);
+                AddOuterCorner(false, true, true, cy);
+            }
+            //Case 16
+            else if (ab && bd && cd && IsHigher(ay, cy))
+            {
+                float edgeBy = (by + dy) / 2;
+                float edgeDy = (by + dy) / 2;
 
-                        //Center floors
-                        AddFace(
-                            AddPoint(0, cy, 0.5f, 0, 1),
-                            AddPoint(0.5f, cy, 0, 1, 1),
-                            AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0)
-                        );
+                StartFloor();
 
-                        AddFace(
-                            AddPoint(1, dy, 0.5f, 1, 0f),
-                            AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
-                            AddPoint(0.5f, cy, 0, 1, 1)
-                        );
+                AddFace(
+                    AddPoint(0, ay, 0),
+                    AddPoint(1, by, 0),
+                    AddPoint(1, edgeBy, 0.5f)
+                );
+                AddFace(
+                    AddPoint(1, edgeBy, 0.5f, 0, 1),
+                    AddPoint(0, ay, 0.5f, 0, 1),
+                    AddPoint(0, ay, 0)
+                );
 
-                        //Walls to upper corner
-                        startWall();
-                        AddFace(
-                            AddPoint(0.5f, cy, 0),
-                            AddPoint(0.5f, by, 0),
-                            AddPoint(1, dy, 0.5f)
-                        );
+                StartWall();
+                AddFace(
+                    AddPoint(0, cy, 0.5f, 0, 0),
+                    AddPoint(0, ay, 0.5f, 0, 1),
+                    AddPoint(1, edgeDy, 0.5f, 1, 0)
+                );
 
-                        AddFace(
-                            AddPoint(1, by, 0.5f),
-                            AddPoint(1, dy, 0.5f),
-                            AddPoint(0.5f, by, 0)
-                        );
+                StartFloor();
+                AddFace(
+                    AddPoint(0, cy, 0.5f, 1, 0),
+                    AddPoint(1, edgeDy, 0.5f, 1, 0),
+                    AddPoint(0, cy, 1)
+                );
 
-                        startFloor();
-                        AddFace(
-                            AddPoint(1, by, 0),
-                            AddPoint(1, by, 0.5f, 0, 1),
-                            AddPoint(0.5f, by, 0, 0, 1)
-                        );
-                    }
-                    //Case 10
-                    else if (isLower(ay, by) && isLower(ay, cy) && isHigher(dy, cy) && bd)
-                    {
-                        AddInnerCorner(true, false, true, true, false);
+                AddFace(
+                    AddPoint(1, dy, 1),
+                    AddPoint(0, cy, 1),
+                    AddPoint(1, edgeDy, 0.5f)
+                );
+            }
+            //Case 17
+            else if (ab && ac && cd && IsHigher(by, dy))
+            {
+                var edgeAy = (ay + cy) / 2;
+                var edgeCy = (ay + cy) / 2;
 
-                        rotateCell(1);
-                        AddEdge(false, true);
-                    }
-                    //Case 11
-                    else if (isLower(ay, by) && isLower(ay, cy) && isHigher(dy, by) && cd)
-                    {
-                        AddInnerCorner(true, false, true, false, true);
+                StartFloor();
+                AddFace(
+                    AddPoint(0, ay, 0),
+                    AddPoint(1, by, 0),
+                    AddPoint(0, edgeAy, 0.5f)
+                );
 
-                        rotateCell(2);
-                        AddEdge(false, true);
-                    }
-                    //Case 12
-                    else if (isLower(ay, by) && isLower(by, dy) && isLower(dy, cy) && isHigher(cy, ay))
-                    {
-                        AddInnerCorner(true, false, true, false, true);
+                AddFace(
+                    AddPoint(1, by, 0.5f, 0, 1),
+                    AddPoint(0, edgeAy, 0.5f, 0, 1),
+                    AddPoint(1, by, 0)
+                );
 
-                        rotateCell(2);
-                        AddEdge(false, true, 0, 0.5f);
+                StartWall();
+                AddFace(
+                    AddPoint(1, by, 0.5f, 1, 1),
+                    AddPoint(1, dy, 0.5f, 1, 0),
+                    AddPoint(0, edgeAy, 0.5f, 0, 0)
+                );
 
-                        rotateCell(1);
-                        AddOuterCorner(false, true, true, cy);
-                    }
-                    //Case 13
-                    else if (isLower(ay, cy) && isLower(cy, dy) && isLower(dy, by) && isHigher(by, ay))
-                    {
-                        AddInnerCorner(true, false, true, true, false);
-
-                        rotateCell(1);
-                        AddEdge(false, true, 0.5f, 1);
-
-                        AddOuterCorner(false, true, true, by);
-                    }
-                    //Case 14
-                    else if (isLower(ay, by) && isLower(by, cy) && isLower(cy, dy))
-                    {
-                        AddInnerCorner(true, false, true, false, true);
-
-                        rotateCell(2);
-                        AddEdge(false, true, 0.5f, 1);
-
-                        AddOuterCorner(false, true, true, by);
-                    }
-                    //Case 15
-                    else if (isLower(ay, cy) && isLower(cy, by) && isLower(by, dy))
-                    {
-                        AddInnerCorner(true, false, true, true, false);
-
-                        rotateCell(1);
-                        AddEdge(false, true, 0, 0.5f);
-
-                        rotateCell(1);
-                        AddOuterCorner(false, true, true, cy);
-                    }
-                    //Case 16
-                    else if (ab && bd && cd && isHigher(ay, cy))
-                    {
-                        float edgeBy = (by + dy) / 2;
-                        float edgeDy = (by + dy) / 2;
-
-                        startFloor();
-
-                        AddFace(
-                            AddPoint(0, ay, 0),
-                            AddPoint(1, by, 0),
-                            AddPoint(1, edgeBy, 0.5f)
-                        );
-                        AddFace(
-                            AddPoint(1, edgeBy, 0.5f, 0, 1),
-                            AddPoint(0, ay, 0.5f, 0, 1),
-                            AddPoint(0, ay, 0)
-                        );
-
-                        startWall();
-                        AddFace(
-                            AddPoint(0, cy, 0.5f, 0, 0),
-                            AddPoint(0, ay, 0.5f, 0, 1),
-                            AddPoint(1, edgeDy, 0.5f, 1, 0)
-                        );
-
-                        startFloor();
-                        AddFace(
-                            AddPoint(0, cy, 0.5f, 1, 0),
-                            AddPoint(1, edgeDy, 0.5f, 1, 0),
-                            AddPoint(0, cy, 1)
-                        );
-
-                        AddFace(
-                            AddPoint(1, dy, 1),
-                            AddPoint(0, cy, 1),
-                            AddPoint(1, edgeDy, 0.5f)
-                        );
-                    }
-                    //Case 17
-                    else if (ab && ac && cd && isHigher(by, dy))
-                    {
-                        var edgeAy = (ay + cy) / 2;
-                        var edgeCy = (ay + cy) / 2;
-
-                        startFloor();
-                        AddFace(
-                            AddPoint(0, ay, 0),
-                            AddPoint(1, by, 0),
-                            AddPoint(0, edgeAy, 0.5f)
-                        );
-
-                        AddFace(
-                            AddPoint(1, by, 0.5f, 0, 1),
-                            AddPoint(0, edgeAy, 0.5f, 0, 1),
-                            AddPoint(1, by, 0)
-                        );
-
-                        startWall();
-                        AddFace(
-                            AddPoint(1, by, 0.5f, 1, 1),
-                            AddPoint(1, dy, 0.5f, 1, 0),
-                            AddPoint(0, edgeAy, 0.5f, 0, 0)
-                        );
-
-                        startFloor();
-                        AddFace(
-                            AddPoint(0, edgeCy, 0.5f, 1, 0),
-                            AddPoint(1, dy, 0.5f, 1, 0),
-                            AddPoint(1, dy, 1)
-                        );
-                        AddFace(
-                            AddPoint(0, cy, 1),
-                            AddPoint(0, edgeCy, 0.5f),
-                            AddPoint(1, dy, 1)
-                        );
-                    }
-                    else
-                    {
-                        caseFound = false;
-                    }
-                    if (caseFound)
-                    {
-                        break;
-                    }
-                }
-                if (!caseFound)
-                {
-                    continue;
-                }
+                StartFloor();
+                AddFace(
+                    AddPoint(0, edgeCy, 0.5f, 1, 0),
+                    AddPoint(1, dy, 0.5f, 1, 0),
+                    AddPoint(1, dy, 1)
+                );
+                AddFace(
+                    AddPoint(0, cy, 1),
+                    AddPoint(0, edgeCy, 0.5f),
+                    AddPoint(1, dy, 1)
+                );
+            }
+            else
+            {
+                caseFound = false;
+            }
+            if (caseFound)
+            {
+                break;
             }
         }
+        if (!caseFound)
+        {
+            Debug.Log("Case not found");
+            return;
+        }
     }
 
-
-    void rotateCell(int rotations)
+    void RotateCell(int rotations)
     {
         r = (r + 4 + rotations) % 4;
 
@@ -555,7 +485,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     void AddFullFloor()
     {
-        startFloor();
+        StartFloor();
         if (higherPolyFloors)
         {
             var ey = (ay + by + cy + dy) / 4;
@@ -609,7 +539,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         if (floorAbove)
         {
-            startFloor();
+            StartFloor();
             AddFace(
                 AddPoint(0, ay, 0, 0, 0),
                 AddPoint(0.5f, ay, 0, 0, 1),
@@ -617,7 +547,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             );
         }
 
-        startWall();
+        StartWall();
         AddFace(
             AddPoint(0, edgeCy, 0.5f, 0, 0),
             AddPoint(0, ay, 0.5f, 0, 1),
@@ -632,7 +562,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         if (floorBelow)
         {
-            startFloor();
+            StartFloor();
             AddFace(
                 AddPoint(1, dy, 1),
                 AddPoint(0, cy, 1),
@@ -665,7 +595,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         if (floorAbove)
         {
-            startFloor();
+            StartFloor();
             AddFace(
                 AddPoint(
                     aX,
@@ -715,7 +645,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             );
         }
 
-        startWall();
+        StartWall();
         AddFace(
             AddPoint(0, edgeCy, 0.5f, 0, 0),
             AddPoint(0, edgeAy, 0.5f, 0, 1),
@@ -729,7 +659,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         );
         if (floorBelow)
         {
-            startFloor();
+            StartFloor();
             AddFace(
                 AddPoint(0, cy, 0.5f, 1, 0),
                 AddPoint(1, dy, 0.5f, 1, 0),
@@ -752,14 +682,14 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         if (lowerFloor)
         {
-            startFloor();
+            StartFloor();
             AddFace(
                 AddPoint(0, ay, 0),
                 AddPoint(0.5f, ay, 0, 1, 0),
                 AddPoint(0, ay, 0.5f, 1, 0)
             );
         }
-        startWall();
+        StartWall();
         AddFace(
             AddPoint(0, ay, 0.5f, 1, 0),
             AddPoint(0.5f, ay, 0, 0, 0),
@@ -771,7 +701,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             AddPoint(0, cornerCy, 0.5f, 1, 1),
             AddPoint(0.5f, ay, 0, 0, 0)
         );
-        startFloor();
+        StartFloor();
         if (fullUpperFloor)
         {
             AddFace(
@@ -823,7 +753,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     void AddDiagonalFloor(float bY, float cY, bool aCliff, bool dCliff)
     {
 
-        startFloor();
+        StartFloor();
         AddFace(
             AddPoint(1, bY, 0),
             AddPoint(0, cY, 1),
@@ -884,6 +814,253 @@ public class MarchingSquaresChunk : MonoBehaviour
         );
     }
 
+
+
+
+    Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
+    {
+        for (int i = 0; i < r; i++)
+        {
+            var temp = x;
+            x = 1 - z;
+            z = temp;
+        }
+
+        var uv = floorMode ? new Vector2(uvX, uvY) : new Vector2(1, 1);
+
+        Color color = new Color(1, 1, 1, 1);
+        if (diagMidpoint)
+        {
+            int idx1 = GetIndex(cellCoords.x, cellCoords.y);
+            int idx2 = GetIndex(cellCoords.x + 1, cellCoords.y);
+            int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
+            int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
+
+            var adColor = Color.Lerp(colorMap[idx1], colorMap[idx4], .5f);
+
+            var bcColor = Color.Lerp(colorMap[idx2], colorMap[idx3], .5f);
+            color = new Color(
+                Mathf.Min(adColor.r, bcColor.r),
+                Mathf.Min(adColor.g, bcColor.g),
+                Mathf.Min(adColor.b, bcColor.b),
+                Mathf.Min(adColor.a, bcColor.a)
+            );
+
+            if (adColor.r > 0.99 || bcColor.r > 0.99)
+                color.r = 1;
+            if (adColor.g > 0.99 || bcColor.g > 0.99)
+                color.g = 1;
+            if (adColor.b > 0.99 || bcColor.b > 0.99)
+                color.b = 1;
+            if (adColor.a > 0.99 || bcColor.a > 0.99)
+                color.a = 1;
+        }
+        else
+        {
+            int idx1 = GetIndex(cellCoords.x, cellCoords.y);
+            int idx2 = GetIndex(cellCoords.x + 1, cellCoords.y);
+            int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
+            int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
+
+            var abColor = Color.Lerp(
+                colorMap[idx1],
+                colorMap[idx2],
+                x
+            );
+            var cdColor = Color.Lerp(
+                colorMap[idx3],
+                colorMap[idx4],
+                x
+            );
+            color = Color.Lerp(abColor, cdColor, z);
+        }
+
+        colors.Add(new float4(color.r,color.g,color.b,color.a));
+        Vector3 vert = new Vector3(
+            (cellCoords.x + x) * cellSize.x,
+            y,
+            (cellCoords.y + z) * cellSize.y
+        );
+        uvs.Add(uv);
+        return vert;
+    }
+
+    void AddFace(Vector3 v0, Vector3 v1, Vector3 v2, bool cache = true)
+    {
+        var vertexCount = vertices.Length;
+        vertices.Add(v0);
+        vertices.Add(v1);
+        vertices.Add(v2);
+
+        triangles.Add(vertexCount + 2);
+        triangles.Add(vertexCount + 1);
+        triangles.Add(vertexCount);
+    }
+
+    bool IsHigher(float a, float b)
+    {
+        return a - b > mergeThreshold;
+    }
+
+    bool IsLower(float a, float b)
+    {
+        return a - b < - mergeThreshold;
+    }
+
+    bool IsMerged(float a, float b)
+    {
+        return Mathf.Abs(a - b) < mergeThreshold;
+    }
+
+
+    void StartFloor()
+    {
+        floorMode = true;
+    }
+    void StartWall()
+    {
+        floorMode = false;
+    }
+}
+
+
+
+
+[ExecuteInEditMode]
+public class MarchingSquaresChunk : MonoBehaviour
+{
+    static readonly ProfilerMarker myMarker = new ProfilerMarker("Terrain Generation Job");
+
+    public Mesh mesh;
+
+    //Mesh data
+    public NativeArray<float3> vertices;
+    public NativeArray<float4> colors;
+    public NativeArray<int> triangles;
+    public NativeArray<float2> uvs;
+
+    public MarchingSquaresTerrain terrain;
+    public Vector2Int chunkPosition;
+
+    public bool higherPolyFloors = true;
+
+    public float[] heightMap;
+    public Vector4[] colorMap;
+
+    public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
+
+
+    public void InitializeTerrain(bool shouldRegenerate = true)
+    {
+        mesh = new Mesh();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        InitializeColorMap();
+        InitializeHeightMap();
+        RegenerateMesh();
+    }
+
+    void InitializeColorMap()
+    {
+        colorMap = new Vector4[terrain.dimensions.z * terrain.dimensions.x];
+        for(int z = 0; z < terrain.dimensions.z; z++)
+        {
+            for (int x = 0; x < terrain.dimensions.x; x++)
+            {
+                colorMap[GetIndex(x,z)] = new Vector4(1, 0, 0, 0);
+            }
+        }
+    }
+
+    void InitializeHeightMap()
+    {
+        heightMap = new float[terrain.dimensions.z * terrain.dimensions.x];
+    }
+
+    public int GetIndex(int x, int z)
+    {
+        //Check if within bounds
+        if (x < 0 || x >= terrain.dimensions.x || z < 0 || z >= terrain.dimensions.z)
+        {
+            return 0;
+        }
+
+        return x + z * terrain.dimensions.x;
+    }
+
+    public void RegenerateMesh()
+    {
+        mesh.Clear();
+
+        JobHandle handle = GenerateTerrainCells();
+
+        MeshRenderer r = gameObject.GetComponent<MeshRenderer>();
+        MeshFilter mf = gameObject.GetComponent<MeshFilter>();
+
+        r.material = terrain.terrainMaterial;
+        mf.sharedMesh = mesh;
+
+        MeshCollider mc = gameObject.GetComponent<MeshCollider>();
+        mc.sharedMesh = mf.sharedMesh;
+
+        vertices.Dispose(handle);
+        colors.Dispose(handle);
+        triangles.Dispose(handle);
+        uvs.Dispose(handle);
+    }
+
+    public JobHandle GenerateTerrainCells()
+    {
+
+        GenerateChunkJob job = new GenerateChunkJob()
+        {
+            //Data
+            heightMap    = new NativeArray<float>(heightMap, Allocator.TempJob),
+            colorMap     = new NativeArray<Vector4>(colorMap, Allocator.TempJob),
+
+            //Mesh data
+            vertices     = new NativeList<float3>(0,Allocator.Persistent),
+            colors       = new NativeList<float4>(0, Allocator.Persistent),
+            uvs          = new NativeList<float2>(0, Allocator.Persistent),
+            triangles    = new NativeList<int>(0, Allocator.Persistent),
+
+            cellEdges    = new NativeArray<bool>(new bool[4]{ false, false, false, false},Allocator.Persistent),
+            pointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
+            
+            //Config
+            higherPolyFloors = higherPolyFloors,
+            cellSize         = terrain.cellSize,
+            terrainSize      = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
+            mergeThreshold   = terrain.mergeThreshold,
+        };
+
+        
+        
+        int totalLoop = (terrain.dimensions.x) * (terrain.dimensions.z);
+
+        JobHandle handle = job.Schedule(totalLoop, terrain.dimensions.x * terrain.dimensions.z);
+
+        handle.Complete();
+
+        vertices = job.vertices.AsArray();
+        colors = job.colors.AsArray();
+        triangles = job.triangles.AsArray();
+        uvs = job.uvs.AsArray();
+
+        mesh.SetVertices<float3>(vertices);
+        mesh.SetColors<float4>(colors);
+        mesh.SetIndices(triangles, MeshTopology.Triangles, 0);
+        mesh.SetUVs<float2>(0, uvs);
+        mesh.Optimize();
+        mesh.RecalculateNormals();
+
+        job.vertices.Dispose();
+        job.colors.Dispose();
+        job.triangles.Dispose();
+        job.uvs.Dispose();
+
+        return handle;//
+    }
+
     public void GenerateHeightmap(NoiseSettings ns)
     {
         for (int z = 0; z < terrain.dimensions.z; z++)
@@ -908,170 +1085,100 @@ public class MarchingSquaresChunk : MonoBehaviour
                 if (noiseValue != 0) 
                     noiseValue = Mathf.Round(noiseValue * terrain.heightBanding) / terrain.heightBanding;
 
-
-                heightMap[getIndex(z, x)] = noiseValue;
+                switch (ns.mixMode)
+                {
+                    case NoiseMixMode.Add:
+                        heightMap[GetIndex(z, x)] += noiseValue;
+                        break;
+                    case NoiseMixMode.Subtract:
+                        heightMap[GetIndex(z, x)] -= noiseValue;
+                        break;
+                    case NoiseMixMode.Multiply:
+                        heightMap[GetIndex(z, x)] *= noiseValue;
+                        break;
+                    case NoiseMixMode.Replace:
+                        heightMap[GetIndex(z, x)] = noiseValue;
+                        break;
+                }
             }
         }
-        regenerateAllCells();
-        regenerateMesh();
+        RegenerateMesh();
     }
 
-    public void drawHeight(int x, int z, float y)
+    public void DrawHeight(int x, int z, float y)
     {
-        heightMap[getIndex(z, x)] = y;
-        notifyNeedsUpdate(z, x);
-        notifyNeedsUpdate(z, x - 1);
-        notifyNeedsUpdate(z - 1, x);
-        notifyNeedsUpdate(z - 1, x - 1);
-        regenerateMesh();
+        heightMap[GetIndex(z, x)] = y;
+        RegenerateMesh();
     }
 
-    public void drawColor(int x, int z, Color color)
-    {
-        colorMap[getIndex(x, z)] = color;
-        notifyNeedsUpdate(z, x);
-        notifyNeedsUpdate(z, x - 1);
-        notifyNeedsUpdate(z - 1, x);
-        notifyNeedsUpdate(z - 1, x - 1);
-        regenerateMesh();
-    }
 
-    void notifyNeedsUpdate(int z, int x)
+    public void DrawHeights(List<Vector2Int> positions, float height, bool setHeight, bool propogation=false)
     {
-        //Return if out of bounds
-        if (x < 0 || x >= terrain.dimensions.x || z < 0 || z >= terrain.dimensions.z)
-            return;
-
-        needsUpdate[getIndex(z, x)] = true;
-    }
-
-    void regenerateAllCells()
-    {
-        for (int z = 0; z < terrain.dimensions.z - 1; z++)
+        for (int i = 0; i < positions.Count; i++)
         {
-            for (int x = 0; x < terrain.dimensions.x - 1; x++)
+            if (setHeight)
+                heightMap[GetIndex(positions[i].y, positions[i].x)] = height;
+            else
+                heightMap[GetIndex(positions[i].y, positions[i].x)] += height;
+        }
+        //Avoid an infinite loop
+
+        RegenerateMesh();
+    }
+
+    public void DrawColor(int x, int z, Color color)
+    {
+        colorMap[GetIndex(x, z)] = color;
+        RegenerateMesh();
+    }
+
+    internal void DrawColors(List<Vector2Int> value, Color color)
+    {
+        for (int i = 0; i < value.Count; i++)
+        {
+            colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color;
+        }
+        RegenerateMesh();
+    }
+
+    internal void SmoothHeights(List<Vector2Int> localCells, float setHeight, bool v, float smoothStrength = 0.5f, bool propagation=false)
+    {
+        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x - 1, chunkPosition.y), out MarchingSquaresChunk left);
+        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x + 1, chunkPosition.y), out MarchingSquaresChunk right);
+        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x, chunkPosition.y - 1), out MarchingSquaresChunk bottom);
+        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x, chunkPosition.y + 1), out MarchingSquaresChunk top);
+
+        for (int i = 0; i < localCells.Count; i++)
+        {
+            int x = localCells[i].x;
+            int z = localCells[i].y;
+            float sum = 0;
+            int count = 0;
+            for (int j = -1; j <= 1; j++)
             {
-                needsUpdate[getIndex(z, x)] = true;
+                for (int k = -1; k <= 1; k++)
+                {
+                    if (x + j < 0 || x + j >= terrain.dimensions.x || z + k < 0 || z + k >= terrain.dimensions.z)
+                        continue;
+                    sum += heightMap[GetIndex(z + k, x + j)];
+                    count++;
+                }
+            }
+            heightMap[GetIndex(z, x)] = Mathf.Lerp(heightMap[GetIndex(z, x)], sum / count, smoothStrength);
+        }
+        if (!propagation)
+        {
+            float[] leftBorder = heightMap.Where((v, i) => i % terrain.dimensions.x == 0).ToArray();
+            float[] rightBorder = heightMap.Where((v, i) => i % terrain.dimensions.x == terrain.dimensions.x - 1).ToArray();
+            float[] topBorder = heightMap.Where((v, i) => i < terrain.dimensions.x).ToArray();
+            float[] bottomBorder = heightMap.Where((v, i) => i > terrain.dimensions.x * (terrain.dimensions.z - 1)).ToArray();
+
+            if (left != null)
+            {
+                //Add leftBorder to right border of left chunk
+                left.heightMap = left.heightMap.Select((v, i) => i % terrain.dimensions.x == terrain.dimensions.x - 1 ? leftBorder[i / terrain.dimensions.x] : v).ToArray();
             }
         }
+        RegenerateMesh();
     }
-
-    Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
-    {
-        for (int i = 0; i < r; i++)
-        {
-            var temp = x;
-            x = 1 - z;
-            z = temp;
-        }
-
-        var uv = floorMode ? new Vector2(uvX, uvY) : new Vector2(1, 1);
-
-        Color color = new Color(1, 1, 1, 1);
-        if (diagMidpoint)
-        {
-            int idx1 = getIndex(cellCoords.x, cellCoords.y);
-            int idx2 = getIndex(cellCoords.x + 1, cellCoords.y);
-            int idx3 = getIndex(cellCoords.x, cellCoords.y + 1);
-            int idx4 = getIndex(cellCoords.x + 1, cellCoords.y + 1);
-
-            var adColor = Color.Lerp(colorMap[idx1], colorMap[idx4], .5f);
-
-            var bcColor = Color.Lerp(colorMap[idx2], colorMap[idx3], .5f);
-            color = new Color(
-                Mathf.Min(adColor.r, bcColor.r),
-                Mathf.Min(adColor.g, bcColor.g),
-                Mathf.Min(adColor.b, bcColor.b),
-                Mathf.Min(adColor.a, bcColor.a)
-            );
-
-            if (adColor.r > 0.99 || bcColor.r > 0.99)
-                color.r = 1;
-            if (adColor.g > 0.99 || bcColor.g > 0.99)
-                color.g = 1;
-            if (adColor.b > 0.99 || bcColor.b > 0.99)
-                color.b = 1;
-            if (adColor.a > 0.99 || bcColor.a > 0.99)
-                color.a = 1;
-        }
-        else
-        {
-            int idx = getIndex(cellCoords.x, cellCoords.y);
-            int idx2 = getIndex(cellCoords.x + 1, cellCoords.y);
-            int idx3 = getIndex(cellCoords.x, cellCoords.y + 1);
-            int idx4 = getIndex(cellCoords.x + 1, cellCoords.y + 1);
-
-            var abColor = Color.Lerp(
-                colorMap[idx],
-                colorMap[idx2],
-                x
-            );
-            var cdColor = Color.Lerp(
-                colorMap[idx3],
-                colorMap[idx4],
-                x
-            );
-            color = Color.Lerp(abColor, cdColor, z);
-        }
-
-        colors.Add(color);
-        Vector3 vert = new Vector3(
-            (cellCoords.x + x) * terrain.cellSize.x,
-            y,
-            (cellCoords.y + z) * terrain.cellSize.y
-        );
-        uvs.Add(uv);
-        cellGeometry[cellCoords].uvs.Add(uv);
-        cellGeometry[cellCoords].colors.Add(color);
-
-        return vert;
-    }
-
-    void AddFace(Vector3 v0, Vector3 v1, Vector3 v2, bool cache = true)
-    {
-        int vertexIdx = vertices.Count;
-
-        vertices.Add(v0);
-        vertices.Add(v1);
-        vertices.Add(v2);
-        triangles.Add(vertexIdx + 2);
-        triangles.Add(vertexIdx + 1);
-        triangles.Add(vertexIdx);
-
-        if (cache)
-        {
-            int cachedVertexIdx = cellGeometry[cellCoords].vertices.Count;
-            cellGeometry[cellCoords].vertices.Add(v0);
-            cellGeometry[cellCoords].vertices.Add(v1);
-            cellGeometry[cellCoords].vertices.Add(v2);
-        }
-
-
-    }
-
-    bool isHigher(float a, float b)
-    {
-        return a - b > terrain.mergeThreshold;
-    }
-
-    bool isLower(float a, float b)
-    {
-        return a - b < -terrain.mergeThreshold;
-    }
-
-    bool isMerged(float a, float b)
-    {
-        return Mathf.Abs(a-b) < terrain.mergeThreshold;
-    }
-
-
-    void startFloor()
-    {
-        floorMode = true;
-    }
-    void startWall()
-    {
-        floorMode = false;
-    }
-
 }

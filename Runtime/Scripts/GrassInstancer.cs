@@ -52,7 +52,7 @@ public class GrassInstancer : MonoBehaviour
             {
                 for (int x = 0; x < t.dimensions.x; x++)
                 {
-                    Color color = c.colorMap[c.getIndex(x, z)];
+                    Color color = c.colorMap[c.GetIndex(x, z)];
                     if (color == new Color(1f,0,0,0f))
                     {
                         Debug.Log("Red");

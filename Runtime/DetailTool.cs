@@ -3,6 +3,12 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 
+enum Mode
+{
+    Add,
+    Remove
+}
+
 [System.Serializable]
 public class DetailTool : TerrainTool
 {
@@ -16,6 +22,8 @@ public class DetailTool : TerrainTool
     Vector2Int chunkPos;
 
     bool mouseDown = false;
+
+    Mode mode = Mode.Add;
 
     float detailDensity = 1f;
     float hoveredCellHeight = 0;
@@ -70,6 +78,13 @@ public class DetailTool : TerrainTool
         mouseDown = false;
     }
 
+    //Load data from EditorPrefs on selection
+    public override void ToolSelected()
+    {
+        detailDensity = EditorPrefs.GetFloat("DetailDensity", 1);
+        normalOffset = EditorPrefs.GetFloat("NormalOffset", 0.5f);
+    }
+
     GUIContent detailDensityLabel = new GUIContent("Detail Density", "Density(amount) of the added details");
     
     public override void OnInspectorGUI()
@@ -81,6 +96,18 @@ public class DetailTool : TerrainTool
         size = EditorGUILayout.FloatField("Size", size);
         detailMesh.objectReferenceValue = EditorGUILayout.ObjectField("Detail Mesh", detailMesh.objectReferenceValue, typeof(Mesh), false);
         detailMaterial.objectReferenceValue = EditorGUILayout.ObjectField("Detail Material", detailMaterial.objectReferenceValue, typeof(Material), false);
+
+        //Draw toolbar for mode selection
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        mode = (Mode)GUILayout.Toolbar((int)mode, new string[] { "Add", "Remove" });
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+
+        //Save editor values
+        EditorPrefs.SetFloat("DetailDensity", detailDensity);
+        EditorPrefs.SetFloat("NormalOffset", normalOffset);
+        EditorPrefs.SetFloat("Size", size);
 
         serializedT.ApplyModifiedProperties();
     }
@@ -98,7 +125,7 @@ public class DetailTool : TerrainTool
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 100, 1 << t.gameObject.layer);
-        mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
+        mousePosition = hit ? new Vector3(hitInfo.point.x, hitInfo.point.y, hitInfo.point.z) : ray.GetPoint(distance);
 
         if (Event.current.type == EventType.ScrollWheel)
         {
@@ -117,36 +144,36 @@ public class DetailTool : TerrainTool
 
         if (mouseDown)
         {
-            for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+            if(mode == Mode.Add)
             {
-                for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+                for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
                 {
-                    Vector3 p = new Vector3(x, 0, y);
-                    Vector3 mouseOffset = mousePosition + p;
-                    //Snap to cell size
-                    Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-
-                    //Get chunk position at mouseOffset
-                    Vector2Int chunk = new Vector2Int(
-                        Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
-                        Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
-                    );
-                    float wX = (chunk.x * (t.dimensions.x - 1)) + x;
-                    float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
-
-                    bool insideRadius = Vector3.Distance(mousePosition,mouseOffset) <= brushSize / 2;
-
-                    if (t.chunks.ContainsKey(chunk) && insideRadius)
+                    for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
                     {
-                        MarchingSquaresChunk c = t.chunks[chunk];
-                        Vector2Int localCellPos = new Vector2Int(
-                            Mathf.FloorToInt((cellWorld.x - c.transform.position.x) / t.cellSize.x),
-                            Mathf.FloorToInt((cellWorld.z - c.transform.position.z) / t.cellSize.y)
+                        Vector3 p = new Vector3(x, 0, y);
+                        Vector3 mouseOffset = mousePosition + p;
+
+                        //Get chunk position at mouseOffset
+                        Vector2Int chunk = new Vector2Int(
+                            Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
+                            Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
                         );
-                        t.AddDetail(localCellPos.x, localCellPos.y, size, normalOffset, mouseOffset + p,c);
+
+                        bool insideRadius = Vector3.Distance(mousePosition, mouseOffset) <= brushSize / 2;
+
+                        if (t.chunks.ContainsKey(chunk) && insideRadius)
+                        {
+                            MarchingSquaresChunk c = t.chunks[chunk];
+                            t.AddDetail(size, normalOffset, mouseOffset, c);
+                        }
                     }
                 }
             }
+            else
+            {
+                t.RemoveDetail(brushSize, mousePosition);
+            }
+
         }
 
         cellPosWorld = mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);

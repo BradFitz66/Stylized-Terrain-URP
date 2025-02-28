@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using static UnityEngine.BoundsInt;
 
@@ -71,6 +73,13 @@ public static class ExtensionMethods
             Vector3Int.FloorToInt(bounds.size)
         );
         return b.allPositionsWithin;
+    }
+
+    public static unsafe NativeArray<T> ToArray<T>(this in UnsafeList<T> list) where T : unmanaged
+    {
+        NativeArray<T> result = new NativeArray<T>(list.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        UnsafeUtility.MemCpy(result.GetUnsafePtr(), list.Ptr, (long)list.Length * sizeof(T));
+        return result;
     }
 
 }
