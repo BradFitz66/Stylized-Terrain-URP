@@ -5,18 +5,14 @@ using Unity.Mathematics;
 using Unity.Profiling;
 using UnityEngine;
 using System.Linq;
-[System.Serializable]
-public struct cellGeometryData
-{
-    public List<Vector3> vertices;
-    public List<Vector2> uvs;
-    public List<Color> colors;
-
-}
+using Unity.Burst;
+using System.Runtime.CompilerServices;
+using UnityEditor;
+using Unity.Collections.LowLevel.Unsafe;
 
 //Job to generate the mesh for this chunk
-
 [System.Serializable]
+[BurstCompile(CompileSynchronously = true)]
 struct GenerateChunkJob : IJobParallelFor
 {
 
@@ -29,12 +25,13 @@ struct GenerateChunkJob : IJobParallelFor
     public float mergeThreshold;
 
     bool floorMode;
-    bool wallMode;
 
     public bool higherPolyFloors;
 
     [NativeDisableParallelForRestriction]
     public NativeList<float3> vertices;
+    [NativeDisableParallelForRestriction]
+    public NativeList<float3> normals;
     [NativeDisableParallelForRestriction]
     public NativeList<float2> uvs;
     [NativeDisableParallelForRestriction]
@@ -54,7 +51,7 @@ struct GenerateChunkJob : IJobParallelFor
 
     [ReadOnly]
     [DeallocateOnJobCompletion]
-    public NativeArray<Vector4> colorMap;
+    public NativeArray<float4> colorMap;
 
     int r;
 
@@ -68,7 +65,7 @@ struct GenerateChunkJob : IJobParallelFor
     bool bd;
     bool cd;
 
-    Vector2Int cellCoords;
+    int2 cellCoords;
 
     public int GetIndex(int x, int z)
     {
@@ -81,9 +78,9 @@ struct GenerateChunkJob : IJobParallelFor
         return x + z * terrainSize.x;
     }
 
-    Vector2Int GetCoordinates(int index)
+    int2 GetCoordinates(int index)
     {
-        return new Vector2Int(index / terrainSize.x, index % terrainSize.x);
+        return new int2(index / terrainSize.x, index % terrainSize.x);
     }
 
     public void Execute(int index)
@@ -668,7 +665,7 @@ struct GenerateChunkJob : IJobParallelFor
             );
         }
     }
-
+    
     void AddInnerCorner(bool lowerFloor = true, bool fullUpperFloor = true, bool flatten = false, bool bdFloor = false, bool cdFloor = false)
     {
 
@@ -745,7 +742,7 @@ struct GenerateChunkJob : IJobParallelFor
             );
         }
     }
-
+    
     void AddDiagonalFloor(float bY, float cY, bool aCliff, bool dCliff)
     {
 
@@ -812,7 +809,6 @@ struct GenerateChunkJob : IJobParallelFor
 
 
 
-
     Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
     {
         for (int i = 0; i < r; i++)
@@ -824,7 +820,7 @@ struct GenerateChunkJob : IJobParallelFor
 
         var uv = floorMode ? new Vector2(uvX, uvY) : new Vector2(1, 1);
 
-        Color color = new Color(1, 1, 1, 1);
+        float4 color = new float4(1, 1, 1, 1);
         if (diagMidpoint)
         {
             int idx1 = GetIndex(cellCoords.x, cellCoords.y);
@@ -832,24 +828,24 @@ struct GenerateChunkJob : IJobParallelFor
             int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
             int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
 
-            var adColor = Color.Lerp(colorMap[idx1], colorMap[idx4], .5f);
+            var adColor = math.lerp(colorMap[idx1], colorMap[idx4], .5f);
 
-            var bcColor = Color.Lerp(colorMap[idx2], colorMap[idx3], .5f);
-            color = new Color(
-                Mathf.Min(adColor.r, bcColor.r),
-                Mathf.Min(adColor.g, bcColor.g),
-                Mathf.Min(adColor.b, bcColor.b),
-                Mathf.Min(adColor.a, bcColor.a)
+            var bcColor = math.lerp(colorMap[idx2], colorMap[idx3], .5f);
+            color = new float4(
+                Mathf.Min(adColor.x, bcColor.x),
+                Mathf.Min(adColor.y, bcColor.y),
+                Mathf.Min(adColor.z, bcColor.z),
+                Mathf.Min(adColor.w, bcColor.w)
             );
 
-            if (adColor.r > 0.99 || bcColor.r > 0.99)
-                color.r = 1;
-            if (adColor.g > 0.99 || bcColor.g > 0.99)
-                color.g = 1;
-            if (adColor.b > 0.99 || bcColor.b > 0.99)
-                color.b = 1;
-            if (adColor.a > 0.99 || bcColor.a > 0.99)
-                color.a = 1;
+            if (adColor.x > 0.99 || bcColor.x > 0.99)
+                color.x = 1;
+            if (adColor.y > 0.99 || bcColor.y > 0.99)
+                color.y = 1;
+            if (adColor.z > 0.99 || bcColor.z > 0.99)
+                color.z = 1;
+            if (adColor.w > 0.99 || bcColor.w > 0.99)
+                color.w = 1;
         }
         else
         {
@@ -858,21 +854,21 @@ struct GenerateChunkJob : IJobParallelFor
             int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
             int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
 
-            var abColor = Color.Lerp(
+            var abColor = math.lerp(
                 colorMap[idx1],
                 colorMap[idx2],
                 x
             );
-            var cdColor = Color.Lerp(
+            var cdColor = math.lerp(
                 colorMap[idx3],
                 colorMap[idx4],
                 x
             );
-            color = Color.Lerp(abColor, cdColor, z);
+            color = math.lerp(abColor, cdColor, z);
         }
 
-        colors.Add(new float4(color.r,color.g,color.b,color.a));
-        Vector3 vert = new Vector3(
+        colors.Add(new float4(color.x,color.y,color.z,color.w));
+        float3 vert = new float3(
             (cellCoords.x + x) * cellSize.x,
             y,
             (cellCoords.y + z) * cellSize.y
@@ -881,7 +877,7 @@ struct GenerateChunkJob : IJobParallelFor
         return vert;
     }
 
-    void AddFace(Vector3 v0, Vector3 v1, Vector3 v2, bool cache = true)
+    void AddFace(float3 v0, float3 v1, float3 v2)
     {
         var vertexCount = vertices.Length;
         vertices.Add(v0);
@@ -891,6 +887,12 @@ struct GenerateChunkJob : IJobParallelFor
         triangles.Add(vertexCount + 2);
         triangles.Add(vertexCount + 1);
         triangles.Add(vertexCount);
+
+        float3 normal = -math.normalize(math.cross(v1 - v0, v2 - v0));
+        
+        normals.Add(normal);
+        normals.Add(normal);
+        normals.Add(normal);
     }
 
     bool IsHigher(float a, float b)
@@ -921,19 +923,21 @@ struct GenerateChunkJob : IJobParallelFor
 
 
 
-
 [ExecuteInEditMode]
 public class MarchingSquaresChunk : MonoBehaviour
 {
-    static readonly ProfilerMarker myMarker = new ProfilerMarker("Terrain Generation Job");
-
     public Mesh mesh;
 
     //Mesh data
-    public NativeArray<float3> vertices;
-    public NativeArray<float4> colors;
-    public NativeArray<int> triangles;
-    public NativeArray<float2> uvs;
+    NativeArray<float3> vertices;
+    NativeArray<float4> colors;
+    NativeArray<int>    triangles;
+    NativeArray<float2> uvs;
+    NativeArray<float3> normals;
+
+    public List<float3> vertCache;
+    public List<float3> normCache;
+    public List<int>    triCache;
 
     public MarchingSquaresTerrain terrain;
     public Vector2Int chunkPosition;
@@ -941,7 +945,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     public bool higherPolyFloors = true;
 
     public float[] heightMap;
-    public Vector4[] colorMap;
+    public float4[] colorMap;
 
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
@@ -957,12 +961,12 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     void InitializeColorMap()
     {
-        colorMap = new Vector4[terrain.dimensions.z * terrain.dimensions.x];
+        colorMap = new float4[terrain.dimensions.z * terrain.dimensions.x];
         for(int z = 0; z < terrain.dimensions.z; z++)
         {
             for (int x = 0; x < terrain.dimensions.x; x++)
             {
-                colorMap[GetIndex(x,z)] = new Vector4(1, 0, 0, 0);
+                colorMap[GetIndex(x,z)] = new float4(1, 0, 0, 0);
             }
         }
     }
@@ -997,33 +1001,35 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         MeshCollider mc = gameObject.GetComponent<MeshCollider>();
         mc.sharedMesh = mf.sharedMesh;
+    }
 
-        vertices.Dispose(handle);
-        colors.Dispose(handle);
-        triangles.Dispose(handle);
-        uvs.Dispose(handle);
+    private void OnDestroy()
+    {
     }
 
     public JobHandle GenerateTerrainCells()
     {
 
+        
+
         GenerateChunkJob job = new GenerateChunkJob()
         {
             //Data
             heightMap    = new NativeArray<float>(heightMap, Allocator.TempJob),
-            colorMap     = new NativeArray<Vector4>(colorMap, Allocator.TempJob),
+            colorMap     = new NativeArray<float4>(colorMap, Allocator.TempJob),
 
             //Mesh data
             vertices     = new NativeList<float3>(0,Allocator.Persistent),
             colors       = new NativeList<float4>(0, Allocator.Persistent),
             uvs          = new NativeList<float2>(0, Allocator.Persistent),
             triangles    = new NativeList<int>(0, Allocator.Persistent),
+            normals      = new NativeList<float3>(0, Allocator.Persistent),
 
             cellEdges    = new NativeArray<bool>(new bool[4]{ false, false, false, false},Allocator.Persistent),
             pointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
             
             //Config
-            higherPolyFloors = higherPolyFloors,
+            higherPolyFloors = false,
             cellSize         = terrain.cellSize,
             terrainSize      = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
             mergeThreshold   = terrain.mergeThreshold,
@@ -1037,22 +1043,40 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         handle.Complete();
 
-        vertices = job.vertices.AsArray();
-        colors = job.colors.AsArray();
+        vertices  = job.vertices.AsArray();
+        colors    = job.colors.AsArray();
         triangles = job.triangles.AsArray();
-        uvs = job.uvs.AsArray();
+        uvs       = job.uvs.AsArray();
+        normals   = job.normals.AsArray();
+
+        //memcpy vertices into vertCache
+        vertCache = new List<float3>(vertices.Length);
+        normCache = new List<float3>(normals.Length);
+        triCache = new List<int>(triangles.Length);
+        for (int i = 0; i < vertices.Length; i++)
+            vertCache.Add(vertices[i]);
+
+        for (int i = 0; i < normals.Length; i++)
+            normCache.Add(normals[i]);
+
+        for (int i = 0; i < triangles.Length; i++)
+            triCache.Add(triangles[i]);
+
 
         mesh.SetVertices<float3>(vertices);
         mesh.SetColors<float4>(colors);
         mesh.SetIndices(triangles, MeshTopology.Triangles, 0);
         mesh.SetUVs<float2>(0, uvs);
         mesh.Optimize();
-        mesh.RecalculateNormals();
+        mesh.RecalculateNormals(45);
 
         job.vertices.Dispose();
         job.colors.Dispose();
         job.triangles.Dispose();
         job.uvs.Dispose();
+        job.normals.Dispose();
+
+
 
         return handle;//
     }
@@ -1124,15 +1148,28 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public void DrawColor(int x, int z, Color color)
     {
-        colorMap[GetIndex(x, z)] = color;
+        colorMap[GetIndex(x, z)] = color.ToFloat4();
         RegenerateMesh();
+    }
+
+    void RemakeMeshToDiscrete(float3[] vert, int[] trig, out float3[] outVerts, out int[] outTriangles)
+    {
+        float3[] vertDiscrete = new float3[trig.Length];
+        int[] trigDiscrete = new int[trig.Length];
+        for (int i = 0; i < trig.Length; i++)
+        {
+            vertDiscrete[i] = vert[trig[i]];
+            trigDiscrete[i] = i;
+        }
+
+        outVerts = vertDiscrete; outTriangles = trigDiscrete;
     }
 
     internal void DrawColors(List<Vector2Int> value, Color color)
     {
         for (int i = 0; i < value.Count; i++)
         {
-            colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color;
+            colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color.ToFloat4();
         }
         RegenerateMesh();
     }

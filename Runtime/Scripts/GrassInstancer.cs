@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System;
 using System.Runtime.InteropServices;
+using Unity.Mathematics;
 
 [Serializable]
 public struct Grass
@@ -52,12 +53,10 @@ public class GrassInstancer : MonoBehaviour
             {
                 for (int x = 0; x < t.dimensions.x; x++)
                 {
-                    Color color = c.colorMap[c.GetIndex(x, z)];
-                    if (color == new Color(1f,0,0,0f))
+                    float4 color = c.colorMap[c.GetIndex(x, z)];
+                    if (color.equal(new float4(1f, 0, 0, 0f)))
                     {
-                        Debug.Log("Red");
                         Vector3 cellPos = c.transform.position + new Vector3(x, 0, z);
-                        
                     }
                 }
             }

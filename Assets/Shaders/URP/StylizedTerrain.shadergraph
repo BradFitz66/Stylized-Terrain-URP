@@ -240,9 +240,6 @@
         },
         {
             "m_Id": "5ef55ed8dc274345bf60542caafb6ed9"
-        },
-        {
-            "m_Id": "06a4369a3a3c4405913cb25c3ff93af2"
         }
     ],
     "m_GroupDatas": [],
@@ -1094,8 +1091,8 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": 2622.999755859375,
-            "y": 474.9999694824219,
+            "x": 2710.999755859375,
+            "y": 427.9999694824219,
             "width": 140.0,
             "height": 34.0
         }
@@ -1286,39 +1283,6 @@
         "e31": 0.0,
         "e32": 0.0,
         "e33": 1.0
-    }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.VertexColorNode",
-    "m_ObjectId": "06a4369a3a3c4405913cb25c3ff93af2",
-    "m_Group": {
-        "m_Id": ""
-    },
-    "m_Name": "Vertex Color",
-    "m_DrawState": {
-        "m_Expanded": true,
-        "m_Position": {
-            "serializedVersion": "2",
-            "x": 4803.88330078125,
-            "y": 463.9091796875,
-            "width": 0.0,
-            "height": 0.0
-        }
-    },
-    "m_Slots": [
-        {
-            "m_Id": "d8377a45f29e44f7a7f7c470fa600551"
-        }
-    ],
-    "synonyms": [],
-    "m_Precision": 0,
-    "m_PreviewExpanded": true,
-    "m_DismissedVersion": 0,
-    "m_PreviewMode": 2,
-    "m_CustomColors": {
-        "m_SerializableColors": []
     }
 }
 
@@ -1820,7 +1784,7 @@
     "m_RefNameGeneratedByDisplayName": "_MAIN_LIGHT_SHADOWS_CASCADE",
     "m_DefaultReferenceName": "_MAIN_LIGHT_SHADOWS_CASCADE",
     "m_OverrideReferenceName": "_MAIN_LIGHT_SHADOWS_CASCADE",
-    "m_GeneratePropertyBlock": false,
+    "m_GeneratePropertyBlock": true,
     "m_UseCustomSlotLabel": false,
     "m_CustomSlotLabel": "",
     "m_DismissedVersion": 0,
@@ -2197,7 +2161,7 @@
     "m_RefNameGeneratedByDisplayName": "_ADDITIONAL_LIGHT_SHADOWS",
     "m_DefaultReferenceName": "_ADDITIONAL_LIGHT_SHADOWS",
     "m_OverrideReferenceName": "",
-    "m_GeneratePropertyBlock": false,
+    "m_GeneratePropertyBlock": true,
     "m_UseCustomSlotLabel": false,
     "m_CustomSlotLabel": "",
     "m_DismissedVersion": 0,
@@ -3453,9 +3417,9 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": 1279.0001220703125,
-            "y": 423.0000305175781,
-            "width": 133.9998779296875,
+            "x": 1328.0001220703125,
+            "y": 457.0000305175781,
+            "width": 134.0001220703125,
             "height": 34.0
         }
     },
@@ -5506,7 +5470,7 @@
     ],
     "synonyms": [],
     "m_Precision": 0,
-    "m_PreviewExpanded": false,
+    "m_PreviewExpanded": true,
     "m_DismissedVersion": 0,
     "m_PreviewMode": 0,
     "m_CustomColors": {
@@ -5852,8 +5816,8 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": 2584.999755859375,
-            "y": 338.0,
+            "x": 2670.999755859375,
+            "y": 328.9999694824219,
             "width": 150.0,
             "height": 34.0
         }
@@ -5936,7 +5900,7 @@
     "m_RefNameGeneratedByDisplayName": "_LIGHT_COOKIES",
     "m_DefaultReferenceName": "_LIGHT_COOKIES",
     "m_OverrideReferenceName": "",
-    "m_GeneratePropertyBlock": false,
+    "m_GeneratePropertyBlock": true,
     "m_UseCustomSlotLabel": false,
     "m_CustomSlotLabel": "",
     "m_DismissedVersion": 0,
@@ -6463,31 +6427,6 @@
     "m_StageCapability": 3,
     "m_Value": 0.0,
     "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
-    "m_ObjectId": "d8377a45f29e44f7a7f7c470fa600551",
-    "m_Id": 0,
-    "m_DisplayName": "Out",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "Out",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 1.0,
-        "y": 1.0,
-        "z": 1.0,
-        "w": 1.0
-    },
-    "m_DefaultValue": {
-        "x": 1.0,
-        "y": 1.0,
-        "z": 1.0,
-        "w": 1.0
-    },
     "m_Labels": []
 }
 

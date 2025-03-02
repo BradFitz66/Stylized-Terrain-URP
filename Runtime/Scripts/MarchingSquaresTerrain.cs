@@ -1,3 +1,4 @@
+using Codice.Client.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -5,6 +6,8 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine;
 
 [System.Serializable]
@@ -385,85 +388,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
         chunk.InitializeTerrain();
     }
 
-    
-    public void SetColor(Vector2Int chunk, int cx, int cz, Vector4 color)
-    {
-        MarchingSquaresChunk c = chunks[chunk];
-        c.DrawColor(cx, cz, color);
-
-        var chunkLeft = chunks.TryGetValue(new Vector2Int(chunk.x - 1, chunk.y), out var leftChunk) && cx == 0;
-        if (chunkLeft)
-        {
-            if (leftChunk.colorMap[leftChunk.GetIndex(dimensions.x - 1, (int)cz)] != color)
-            {
-                leftChunk.DrawColor(dimensions.x - 1, cz, color);
-            }
-        }
-        var chunkRight = chunks.TryGetValue(new Vector2Int(chunk.x + 1, chunk.y), out var rightChunk) && cx == dimensions.x - 1;
-        if (chunkRight)
-        {
-            if (rightChunk.colorMap[rightChunk.GetIndex(0, (int)cz)] != color)
-            {
-                rightChunk.DrawColor(0, cz, color);
-            }
-        }
-
-        var chunkUp = chunks.TryGetValue(new Vector2Int(chunk.x, chunk.y + 1), out var upChunk) && cz == dimensions.z - 1;
-        if (chunkUp)
-        {
-            if (upChunk.colorMap[upChunk.GetIndex((int)cx, 0)] != color)
-            {
-                upChunk.DrawColor(cx, 0, color);
-            }
-        }
-
-        var chunkDown = chunks.TryGetValue(new Vector2Int(chunk.x, chunk.y - 1), out var downChunk) && cz == 0;
-        if (chunkDown)
-        {
-            if (downChunk.colorMap[downChunk.GetIndex((int)cx, dimensions.z - 1)] != color)
-            {
-                downChunk.DrawColor(cx, dimensions.z - 1, color);
-            }
-        }
-
-        var chunkUpright = chunks.TryGetValue(new Vector2Int(chunk.x + 1, chunk.y + 1), out var upRightChunk) && cx == dimensions.x - 1 && cz == dimensions.z - 1;
-        if (chunkUpright)
-        {
-            if (upRightChunk.colorMap[upRightChunk.GetIndex(0, 0)] != color)
-            {
-                upRightChunk.DrawColor(0, 0, color);
-            }
-        }
-
-        var chunkUpleft = chunks.TryGetValue(new Vector2Int(chunk.x - 1, chunk.y + 1), out var upLeftChunk) && cx == 0 && cz == dimensions.z - 1;
-        if (chunkUpleft)
-        {
-            if (upLeftChunk.colorMap[upLeftChunk.GetIndex(dimensions.z - 1, 0)] != color)
-            {
-                upLeftChunk.DrawColor(dimensions.z - 1, 0, color);
-            }
-        }
-
-        var chunkDownright = chunks.TryGetValue(new Vector2Int(chunk.x + 1, chunk.y - 1), out var downRightChunk) && cx == dimensions.x - 1 && cz == 0;
-        if (chunkDownright)
-        {
-            if (downRightChunk.colorMap[downRightChunk.GetIndex(0, dimensions.x - 1)] != color)
-            {
-                downRightChunk.DrawColor(0, dimensions.x - 1, color);
-            }
-        }
-
-        var chunkDownleft = chunks.TryGetValue(new Vector2Int(chunk.x - 1, chunk.y - 1), out var downLeftChunk) && cx == 0 && cz == 0;
-        if (chunkDownleft)
-        {
-            if (downLeftChunk.colorMap[downLeftChunk.GetIndex(dimensions.z - 1, dimensions.x - 1)] != color)
-            {
-                downLeftChunk.DrawColor(dimensions.z - 1, dimensions.x - 1, color);
-            }
-        }
-
-    }
-   
+    Mesh m;
+    List<Vector3> normals;
+    int[] triangles;
     void UpdateDetailHeight()
     {
         List<DetailObject> newDetailList = new List<DetailObject>();
@@ -496,24 +423,59 @@ public class MarchingSquaresTerrain : MonoBehaviour
         JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1,default(JobHandle));
 
         handle.Complete();
+        
 
         int index = 0;
+
+        Mesh.MeshDataArray meshDataArray;
+
+        ProfilerMarker pm = new ProfilerMarker("UpdateDetailHeight.ResultLoop");
+        pm.Begin();
         foreach (var hit in results) { 
             if (hit.collider != null)
             {
+                if (hit.transform.GetComponent<MeshFilter>() == null)
+                    continue;
+
+                MarchingSquaresChunk chunk = hit.transform.GetComponent<MarchingSquaresChunk>();
+                if (chunk == null)
+                    continue;
+
+                if(chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
+                    continue;
+                
+
+
                 DetailObject d = allDetail[index];
                 Vector3 pos = hit.point;
                 Vector3 size = d.trs.lossyScale;
                 Matrix4x4 trs = Matrix4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+
+                Vector3 n0 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 0]];
+                Vector3 n1 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 1]];
+                Vector3 n2 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 2]];
+
+                Vector3 baryCenter = hit.barycentricCoordinate;
+
+                Vector3 interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
+                interpolatedNormal = interpolatedNormal.normalized;
+
+                Transform hitTransform = hit.collider.transform;
+                interpolatedNormal = hitTransform.TransformDirection(interpolatedNormal);
+
                 newDetailList.Add(new DetailObject()
                 {
                     trs = trs,
-                    normal = hit.normal,
+                    normal = interpolatedNormal,
                     normalOffset = d.normalOffset //Unused in shader. 
                 });
+                //gotNormals.Dispose();
+                
             }
             index++;
         }
+        pm.End();
+
 
         results.Dispose();
         commands.Dispose();
