@@ -28,8 +28,7 @@ public class TextureBrush : TerrainTool
     float brushSize = 2;
 
     //cell world position, chunkPos
-    Dictionary<Vector3,Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
-
+    Dictionary<Vector2Int, List<Vector3>> selectedCells = new Dictionary<Vector2Int, List<Vector3>>();
     public Color color = Color.white;
 
     public override void DrawHandles()
@@ -38,20 +37,18 @@ public class TextureBrush : TerrainTool
 
         foreach (var cell in selectedCells)
         {
-            if (!t.chunks.ContainsKey(cell.Value))
+            if (!t.chunks.ContainsKey(cell.Key))
             {
                 selectedCells.Clear();
                 break;
             }
-            MarchingSquaresChunk c = t.chunks[cell.Value];
-            Vector2Int localCellPos = new Vector2Int(
-                Mathf.FloorToInt((cell.Key.x - c.transform.position.x) / t.cellSize.x),
-                Mathf.FloorToInt((cell.Key.z - c.transform.position.z) / t.cellSize.y)
-            );
+            MarchingSquaresChunk c = t.chunks[cell.Key];
 
-            Handles.color = new Color(0, 1, 0, .5f);
-            float cellHeight = c.heightMap[c.getIndex(localCellPos.y, localCellPos.x)];
-            Handles.DrawSolidDisc(cell.Key + Vector3.up * cellHeight, Vector3.up, t.cellSize.x / 2);
+            //for (int i = 0; i < cell.Value.Count; i++)
+            //{
+            //    Vector3 p = cell.Value[i];
+            //    Handles.DrawSolidDisc(p + Vector3.up * c.heightMap[c.GetIndex(cell.Key.y, cell.Key.x)], Vector3.up, brushSize / 2);
+            //}
 
             Handles.color = Color.yellow;
             Vector3 chunkWorldPos = new Vector3(
@@ -124,8 +121,6 @@ public class TextureBrush : TerrainTool
         if (t.chunks.ContainsKey(chunkPos))
         {
 
-            //Get all cells in a radius around the mouse position
-
         }
     }
     public override void OnMouseUp(int button = 0)
@@ -197,9 +192,18 @@ public class TextureBrush : TerrainTool
 
                 bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y),cellWorld) <= brushSize / 2;
 
-                if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld) && insideRadius)
+                if (t.chunks.ContainsKey(chunk) && insideRadius)
                 {
-                    selectedCells[cellWorld] = chunk;
+                    if (!selectedCells.ContainsKey(chunk))
+                    {
+                        selectedCells.Add(chunk, new List<Vector3>());
+                        selectedCells[chunk].Add(cellWorld);
+                    }
+                    else
+                    {
+                        if (!selectedCells[chunk].Contains(cellWorld))
+                            selectedCells[chunk].Add(cellWorld);
+                    }
                 }
             }
         }
@@ -208,12 +212,17 @@ public class TextureBrush : TerrainTool
         {
             foreach (var cell in selectedCells)
             {
-                MarchingSquaresChunk c = t.chunks[cell.Value];
-                Vector2Int localCellPos = new Vector2Int(
-                    Mathf.FloorToInt((cell.Key.x - c.transform.position.x) / t.cellSize.x),
-                    Mathf.FloorToInt((cell.Key.z - c.transform.position.z) / t.cellSize.y)
-                );
-                t.SetColor(cell.Value, localCellPos.x, localCellPos.y, color);
+                if (!t.chunks.ContainsKey(cell.Key))
+                {
+                    selectedCells.Clear();
+                    break;
+                }
+                MarchingSquaresChunk c = t.chunks[cell.Key];
+                List<Vector2Int> localCells = cell.Value.ConvertAll(v => new Vector2Int(
+                    Mathf.FloorToInt((v.x - c.transform.position.x) / t.cellSize.x),
+                    Mathf.FloorToInt((v.z - c.transform.position.z) / t.cellSize.y)
+                ));
+                c.DrawColors(localCells, color);
             }
         }
 
@@ -230,7 +239,7 @@ public class TextureBrush : TerrainTool
                 Mathf.FloorToInt((cellPosWorld.x - t.chunks[chunkPos].transform.position.x) / t.cellSize.x),
                 Mathf.FloorToInt((cellPosWorld.z - t.chunks[chunkPos].transform.position.z) / t.cellSize.y)
             );
-            height = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].getIndex(cellPos.y, cellPos.x)];
+            height = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].GetIndex(cellPos.y, cellPos.x)];
         }
 
     }
@@ -259,11 +268,6 @@ public class TextureBrush : TerrainTool
                 Layers[i] = tex;
                 UpdateMaterialLayers(Layers);
             }
-
-            //if (EditorGUILayout.Toggle("Enabled", selectedTexture == i))
-            //{
-            //    selectedTexture = i;
-            //}
         }
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();

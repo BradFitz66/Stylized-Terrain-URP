@@ -4,14 +4,12 @@ using UnityEditor;
 using System.Collections.Generic;
 
 [System.Serializable]
-public class TerrainBrush : TerrainTool
+public class SculptBrush : TerrainTool
 {
 
     Vector3 mousePosition;
     Vector3 cellPosWorld;
     Vector3 totalTerrainSize;
-
-    Vector2 viewportMousePosition;
 
     Vector2Int cellPos;
     Vector2Int chunkPos;
@@ -19,25 +17,34 @@ public class TerrainBrush : TerrainTool
     bool mouseDown = false;
     bool flattenGeometry=false;
 
+    float setHeight = 0;
     float dragHeight = 0;
     float hoveredCellHeight = 0;
-
     float brushSize = 2;
 
     //cell world position, chunkPos
-    Dictionary<Vector3, Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
+    List<Vector3> selectedCells = new List<Vector3>();
+    List<Vector3> smoothingCells = new List<Vector3>();
 
     Bounds selectionBounds;
 
     enum ToolState
     {
         None,
+        SmoothingHeight,
         SelectingCells,
         SelectedCells,
         DraggingHeight
     }
 
     ToolState state = ToolState.None;
+
+
+    public override void ToolSelected()
+    {
+        setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
+    }
+
     public override void DrawHandles()
     {
 
@@ -47,23 +54,24 @@ public class TerrainBrush : TerrainTool
             Handles.DrawSolidDisc(cellPosWorld + Vector3.up * hoveredCellHeight,Vector3.up, brushSize / 2);
         }
        
-        foreach (var cell in selectedCells)
+        foreach (var pos in selectedCells)
         {
-            if (!t.chunks.ContainsKey(cell.Value))
-            {
-                selectedCells.Clear();
-                state = ToolState.None;
-                break;
-            }
-            MarchingSquaresChunk c = t.chunks[cell.Value];
-            Vector2Int localCellPos = new Vector2Int(
-                Mathf.FloorToInt((cell.Key.x - c.transform.position.x) / t.cellSize.x),
-                Mathf.FloorToInt((cell.Key.z - c.transform.position.z) / t.cellSize.y)
-            );
-            Handles.color = new Color(0, 1, 0, .5f);
 
-            float cellHeight = c.heightMap[c.getIndex(localCellPos.y, localCellPos.x)];
-            Handles.DrawSolidDisc(cell.Key + Vector3.up * (cellHeight+dragHeight), Vector3.up, t.cellSize.x/2);
+            List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos);
+            if (chunks.Count > 0)
+            {
+                //We don't really need to be accurate with this, so just get the first chunk that contains the pos
+                MarchingSquaresChunk c = chunks[0];
+                Vector2Int localCell = new Vector2Int(
+                    Mathf.FloorToInt((pos.x - c.transform.position.x) / t.cellSize.x),
+                    Mathf.FloorToInt((pos.z - c.transform.position.z) / t.cellSize.y)
+                );
+
+                Handles.color = new Color(0, 1, 0, .5f);
+
+                float cellHeight = c.heightMap[c.GetIndex(localCell.y, localCell.x)];
+                Handles.DrawSolidDisc(pos + Vector3.up * (cellHeight + dragHeight), Vector3.up, t.cellSize.x / 2);
+            }
         }
 
         //Draw wire around hovered chunk
@@ -78,18 +86,38 @@ public class TerrainBrush : TerrainTool
             Handles.DrawWireCube(chunkWorldPos, totalTerrainSize);
         }
 
+        //Draw text to indicate current state
+        switch(state)
+        {
+            case ToolState.SelectingCells:
+                Handles.Label(mousePosition + Vector3.up * 2, "Selecting Cells");
+                break;
+            case ToolState.SelectedCells:
+                Handles.Label(mousePosition + Vector3.up * 2, "Selected Cells");
+                break;
+            case ToolState.DraggingHeight:
+                Handles.Label(mousePosition + Vector3.up * 2, $"Dragging Height: {dragHeight}");
+                break;
+            case ToolState.SmoothingHeight:
+                Handles.Label(mousePosition + Vector3.up * 2, "Smoothing Height");
+                break;
+        }
     }
     public override void OnMouseDown(int button = 0)
     {
+
         if (button == 0)
         {
             switch (state)
             {
-                case ToolState.None:
+                case ToolState.None:       
                     state = ToolState.SelectingCells;
                     break;
                 case ToolState.SelectedCells:
                     state = ToolState.DraggingHeight;
+                    break;
+                case ToolState.SmoothingHeight:
+                    mouseDown = true;
                     break;
             }
         }
@@ -101,6 +129,44 @@ public class TerrainBrush : TerrainTool
             case ToolState.DraggingHeight:
                 dragHeight += -delta.y * 0.1f;
                 break;
+            case ToolState.SmoothingHeight:
+                if (!mouseDown)
+                    return;
+                for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+                {
+                    for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+                    {
+                        Vector3 p = new Vector3(x, 0, y);
+                        Vector3 mouseOffset = mousePosition + p;
+                        //Snap to cell size
+                        Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
+
+                        bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= brushSize / 2;
+
+                        if (insideRadius && !smoothingCells.Contains(cellWorld))
+                        {
+                            smoothingCells.Add(cellWorld);
+                        }
+
+                    }
+                }
+
+                foreach (var cell in smoothingCells)
+                {
+                    List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cell);
+                    if (chunks.Count > 0)
+                    {
+                        MarchingSquaresChunk c = chunks[0];
+                        Vector2Int localCell = new Vector2Int(
+                            Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
+                            Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
+                        );
+                        t.SmoothHeights(smoothingCells);
+                    }
+                }
+                smoothingCells.Clear();
+                break;
+                
         }
     }
 
@@ -109,7 +175,7 @@ public class TerrainBrush : TerrainTool
     {
         if(button != 0)
             return;
-
+        Debug.Log("Current state: " + state);
         switch (state)
         {
             case ToolState.SelectingCells:
@@ -119,47 +185,13 @@ public class TerrainBrush : TerrainTool
                     state = ToolState.None;
                 break;
             case ToolState.DraggingHeight:
-                //Remove any selectedCells with the same world position
-                float avgHeight = 0;
-                foreach (var cell in selectedCells)
-                {
-                    MarchingSquaresChunk c = t.chunks[cell.Value];
-                    Vector2Int localCellPos = new Vector2Int(
-                        Mathf.FloorToInt((cell.Key.x - c.transform.position.x) / t.cellSize.x),
-                        Mathf.FloorToInt((cell.Key.z - c.transform.position.z) / t.cellSize.y)
-                    );
-                    
-                    float curHeight = c.heightMap[c.getIndex(localCellPos.y, localCellPos.x)];
-                    if (flattenGeometry)
-                    {
-                        avgHeight += curHeight;
-                    }
-
-                    if (!flattenGeometry)
-                    {
-                        t.SetHeight(cell.Value, localCellPos.x, localCellPos.y, curHeight + dragHeight);
-                    }
-                }
-
-                if (flattenGeometry)
-                {
-                    avgHeight /= selectedCells.Count;
-                    foreach (var cell in selectedCells)
-                    {
-                        MarchingSquaresChunk c = t.chunks[cell.Value];
-                        //Convert world position to chunk cell position
-                        Vector2Int localCellPos = new Vector2Int(
-                            Mathf.FloorToInt((cell.Key.x - c.transform.position.x) / t.cellSize.x),
-                            Mathf.FloorToInt((cell.Key.z - c.transform.position.z) / t.cellSize.y)
-                        );
-                        t.SetHeight(cell.Value, localCellPos.x, localCellPos.y, avgHeight+dragHeight);
-                    }
-                }
-
+                t.DrawHeights(selectedCells, dragHeight, false);
                 dragHeight = 0;
                 state = ToolState.None;
                 break;
-
+            case ToolState.SmoothingHeight:
+                state = ToolState.None;
+                break;
         }
 
         mouseDown = false;
@@ -169,10 +201,17 @@ public class TerrainBrush : TerrainTool
     public override void OnInspectorGUI()
     {
         flattenGeometry = EditorGUILayout.Toggle(flattenLabel, flattenGeometry);
+        setHeight = EditorGUILayout.FloatField("Set Height", setHeight);
+
+        //Save setHeight
+        EditorPrefs.SetFloat("setHeight_SCULPTBRUSH", setHeight);
     }
 
     public override void Update()
     {
+        if(selectedCells == null)
+            selectedCells = new List<Vector3>();
+
         totalTerrainSize = new Vector3(
             (t.dimensions.x-1) * t.cellSize.x,
             0,
@@ -183,12 +222,21 @@ public class TerrainBrush : TerrainTool
             selectedCells.Clear();
         }
 
-        viewportMousePosition = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo,100, 1 << t.gameObject.layer);
         mousePosition = hit ? new Vector3(hitInfo.point.x,0,hitInfo.point.z) : ray.GetPoint(distance);
+
+        if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.LeftShift)
+        {
+            Debug.Log("Setting height");
+            state = ToolState.SmoothingHeight;
+        }
+        else if (Event.current.type == EventType.KeyUp && Event.current.keyCode == KeyCode.LeftShift)
+        {
+            state = ToolState.None;
+        }
 
         if (Event.current.type == EventType.ScrollWheel)
         {
@@ -197,6 +245,7 @@ public class TerrainBrush : TerrainTool
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
+
 
         chunkPos = new Vector2Int(
             Mathf.FloorToInt(mousePosition.x / totalTerrainSize.x),
@@ -214,24 +263,16 @@ public class TerrainBrush : TerrainTool
                     //Snap to cell size
                     Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                    //Get chunk position at mouseOffset
-                    Vector2Int chunk = new Vector2Int(
-                        Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
-                        Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
-                    );
-
-                    float wX = (chunk.x * (t.dimensions.x - 1)) + x;
-                    float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
-
                     bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= brushSize / 2;
 
-                    if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(cellWorld) && insideRadius)
+                    if (insideRadius && !selectedCells.Contains(cellWorld))
                     {
-                        selectedCells[cellWorld] = chunk;
+                        selectedCells.Add(cellWorld);
                     }
                 }
             }
         }
+
 
         cellPosWorld = mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);
 
@@ -244,7 +285,7 @@ public class TerrainBrush : TerrainTool
             );
             if (state== ToolState.SelectingCells || state == ToolState.None)
             {
-                hoveredCellHeight = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].getIndex(cellPos.y, cellPos.x)];
+                hoveredCellHeight = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].GetIndex(cellPos.y, cellPos.x)];
             }
         }
     }

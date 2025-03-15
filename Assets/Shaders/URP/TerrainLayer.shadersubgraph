@@ -574,10 +574,10 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -523.0000610351563,
-            "y": 162.00001525878907,
-            "width": 172.00003051757813,
-            "height": 249.00001525878907
+            "x": -529.0,
+            "y": 180.0,
+            "width": 172.0,
+            "height": 249.0
         }
     },
     "m_Slots": [
@@ -628,7 +628,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "Tile",
     "m_StageCapability": 3,
-    "m_Value": 1.0,
+    "m_Value": 4.0,
     "m_DefaultValue": 1.0,
     "m_Labels": []
 }
@@ -716,7 +716,7 @@
     "hlslDeclarationOverride": 0,
     "m_Hidden": false,
     "m_Value": {
-        "m_SerializedTexture": "",
+        "m_SerializedTexture": "{\"texture\":{\"fileID\":10309,\"guid\":\"0000000000000000f000000000000000\",\"type\":0}}",
         "m_Guid": ""
     },
     "isMainTexture": false,
@@ -824,8 +824,8 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -819.0,
-            "y": 287.0,
+            "x": -841.0,
+            "y": 304.0,
             "width": 104.0,
             "height": 34.0
         }
@@ -878,10 +878,10 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -819.0000610351563,
-            "y": 213.0,
-            "width": 123.0,
-            "height": 34.00001525878906
+            "x": -789.0,
+            "y": 203.0,
+            "width": 124.0,
+            "height": 34.0
         }
     },
     "m_Slots": [

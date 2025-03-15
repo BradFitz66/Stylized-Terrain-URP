@@ -16,6 +16,8 @@ public class TerrainTool : ScriptableObject
 
     public virtual void DrawHandles() { }
 
+    
+
     public virtual void OnInspectorGUI() 
     {
     }

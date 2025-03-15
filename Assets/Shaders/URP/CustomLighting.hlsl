@@ -154,7 +154,7 @@ void Shadowmask_half (float2 lightmapUV, out half4 Shadowmask){
 */
 void AmbientSampleSH_float (float3 WorldNormal, out float3 Ambient){
 	#ifdef SHADERGRAPH_PREVIEW
-		Ambient = float3(0.1, 0.1, 0.1); // Default ambient colour for previews
+		Ambient = float3(1.0, 0.1, 0.1); // Default ambient colour for previews
 	#else
 		Ambient = SampleSH(WorldNormal);
 	#endif
