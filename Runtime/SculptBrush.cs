@@ -11,8 +11,6 @@ public class SculptBrush : TerrainTool
     Vector3 cellPosWorld;
     Vector3 totalTerrainSize;
 
-    Vector2 viewportMousePosition;
-
     Vector2Int cellPos;
     Vector2Int chunkPos;
 
@@ -20,17 +18,13 @@ public class SculptBrush : TerrainTool
     bool flattenGeometry=false;
 
     float setHeight = 0;
-
-
-
     float dragHeight = 0;
     float hoveredCellHeight = 0;
-
     float brushSize = 2;
 
     //cell world position, chunkPos
-    Dictionary<Vector2Int, List<Vector3>> selectedCells = new Dictionary<Vector2Int, List<Vector3>>();
-    Dictionary<Vector2Int, List<Vector3>> smoothingCells = new Dictionary<Vector2Int, List<Vector3>>();
+    List<Vector3> selectedCells = new List<Vector3>();
+    List<Vector3> smoothingCells = new List<Vector3>();
 
     Bounds selectionBounds;
 
@@ -60,31 +54,24 @@ public class SculptBrush : TerrainTool
             Handles.DrawSolidDisc(cellPosWorld + Vector3.up * hoveredCellHeight,Vector3.up, brushSize / 2);
         }
        
-        foreach (var cell in selectedCells)
+        foreach (var pos in selectedCells)
         {
-            if (!t.chunks.ContainsKey(cell.Key))
-            {
-                selectedCells.Clear();
-                state = ToolState.None;
-                break;
-            }
-            MarchingSquaresChunk c = t.chunks[cell.Key];
 
-            foreach(var pos in cell.Value)
+            List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos);
+            if (chunks.Count > 0)
             {
+                //We don't really need to be accurate with this, so just get the first chunk that contains the pos
+                MarchingSquaresChunk c = chunks[0];
                 Vector2Int localCell = new Vector2Int(
                     Mathf.FloorToInt((pos.x - c.transform.position.x) / t.cellSize.x),
                     Mathf.FloorToInt((pos.z - c.transform.position.z) / t.cellSize.y)
                 );
 
-
                 Handles.color = new Color(0, 1, 0, .5f);
 
                 float cellHeight = c.heightMap[c.GetIndex(localCell.y, localCell.x)];
                 Handles.DrawSolidDisc(pos + Vector3.up * (cellHeight + dragHeight), Vector3.up, t.cellSize.x / 2);
-
             }
-
         }
 
         //Draw wire around hovered chunk
@@ -154,39 +141,27 @@ public class SculptBrush : TerrainTool
                         //Snap to cell size
                         Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                        //Get chunk position at mouseOffset
-                        Vector2Int chunk = new Vector2Int(
-                            Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
-                            Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
-                        );
-
-                        float wX = (chunk.x * (t.dimensions.x - 1)) + x;
-                        float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
-
                         bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= brushSize / 2;
 
-                        if (t.chunks.ContainsKey(chunk) && !smoothingCells.ContainsKey(chunk) && insideRadius)
+                        if (insideRadius && !smoothingCells.Contains(cellWorld))
                         {
-                            smoothingCells.Add(chunk, new List<Vector3>());
-                            smoothingCells[chunk].Add(cellWorld);
+                            smoothingCells.Add(cellWorld);
                         }
-                        else if (t.chunks.ContainsKey(chunk) && smoothingCells.ContainsKey(chunk) && insideRadius)
-                        {
-                            if (!smoothingCells[chunk].Contains(cellWorld))
-                                smoothingCells[chunk].Add(cellWorld);
-                        }
+
                     }
                 }
+
                 foreach (var cell in smoothingCells)
                 {
-                    MarchingSquaresChunk c = t.chunks[cell.Key];
-                    if (!flattenGeometry)
+                    List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cell);
+                    if (chunks.Count > 0)
                     {
-                        List<Vector2Int> localCells = cell.Value.ConvertAll(v => new Vector2Int(
-                            Mathf.FloorToInt((v.x - c.transform.position.x) / t.cellSize.x),
-                            Mathf.FloorToInt((v.z - c.transform.position.z) / t.cellSize.y)
-                        ));
-                        t.SmoothHeights(localCells, c, setHeight, true);
+                        MarchingSquaresChunk c = chunks[0];
+                        Vector2Int localCell = new Vector2Int(
+                            Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
+                            Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
+                        );
+                        t.SmoothHeights(smoothingCells);
                     }
                 }
                 smoothingCells.Clear();
@@ -210,24 +185,11 @@ public class SculptBrush : TerrainTool
                     state = ToolState.None;
                 break;
             case ToolState.DraggingHeight:
-                foreach (var cell in selectedCells)
-                {
-                    MarchingSquaresChunk c = t.chunks[cell.Key];
-                    if (!flattenGeometry)
-                    {
-                        List<Vector2Int> localCells = cell.Value.ConvertAll(v => new Vector2Int(
-                            Mathf.FloorToInt((v.x - c.transform.position.x) / t.cellSize.x),
-                            Mathf.FloorToInt((v.z - c.transform.position.z) / t.cellSize.y)
-                        ));
-                        t.DrawHeights(localCells,c,dragHeight, false);
-                    }
-                }
-
+                t.DrawHeights(selectedCells, dragHeight, false);
                 dragHeight = 0;
                 state = ToolState.None;
                 break;
             case ToolState.SmoothingHeight:
-                Debug.Log("Setting height");
                 state = ToolState.None;
                 break;
         }
@@ -247,6 +209,9 @@ public class SculptBrush : TerrainTool
 
     public override void Update()
     {
+        if(selectedCells == null)
+            selectedCells = new List<Vector3>();
+
         totalTerrainSize = new Vector3(
             (t.dimensions.x-1) * t.cellSize.x,
             0,
@@ -257,7 +222,6 @@ public class SculptBrush : TerrainTool
             selectedCells.Clear();
         }
 
-        viewportMousePosition = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
@@ -299,26 +263,11 @@ public class SculptBrush : TerrainTool
                     //Snap to cell size
                     Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                    //Get chunk position at mouseOffset
-                    Vector2Int chunk = new Vector2Int(
-                        Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
-                        Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
-                    );
-
-                    float wX = (chunk.x * (t.dimensions.x - 1)) + x;
-                    float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
-
                     bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= brushSize / 2;
 
-                    if (t.chunks.ContainsKey(chunk) && !selectedCells.ContainsKey(chunk) && insideRadius)
+                    if (insideRadius && !selectedCells.Contains(cellWorld))
                     {
-                        selectedCells.Add(chunk, new List<Vector3>());
-                        selectedCells[chunk].Add(cellWorld);
-                    }
-                    else if (t.chunks.ContainsKey(chunk) && selectedCells.ContainsKey(chunk) && insideRadius)
-                    {
-                        if (!selectedCells[chunk].Contains(cellWorld))
-                            selectedCells[chunk].Add(cellWorld);
+                        selectedCells.Add(cellWorld);
                     }
                 }
             }

@@ -23,27 +23,20 @@ Shader "STE/Terrain" {
 
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile_fwdbase nolightmap nodirlightmap nodynlightmap novertexlight
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
-            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile _ _SHADOWS_SOFT
+            #pragma multi_compile _ _FORWARD_PLUS
             #pragma target 4.5
 
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"            
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-
-            struct DetailBuffer {
-                float4x4 TRS;
-                float3 normal;
-                float normalOffset; //Unused  
-            };
+            #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/CustomLighting.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
-                StructuredBuffer<DetailBuffer> _TerrainDetail;
-
                 sampler2D _MainTex;
 
                 float4 _MainTex_ST;
@@ -79,13 +72,13 @@ Shader "STE/Terrain" {
                 // The positions in this struct must have the SV_POSITION semantic.
                 float4 positionHCS  : SV_POSITION;
                 float3 positionWS   : TEXCOORD0;
-                float3 positionOS   : TEXCOORD1;
-                float3 normalWS     : TEXCOORD2;
+                float3 normalWS     : TEXCOORD1;
+                float3 worldViewDir : TEXCOORD2;
                 float2 uv_MainTex   : TEXCOORD3;
                 float4 color        : COLOR;
             };            
 
-            Varyings vert (Attributes IN, uint instanceID : SV_InstanceID)
+            Varyings vert (Attributes IN)
             {
                 Varyings OUT;
                 
@@ -94,8 +87,8 @@ Shader "STE/Terrain" {
 
                 OUT.positionHCS = positionInputs.positionCS;
                 OUT.positionWS = positionInputs.positionWS;
-                OUT.positionOS = IN.positionOS;
                 OUT.normalWS = normalInputs.normalWS;
+                OUT.worldViewDir = GetWorldSpaceViewDir(positionInputs.positionWS);
 
                 OUT.uv_MainTex = IN.uv_MainTex;
                 OUT.color = IN.COLOR;
@@ -211,8 +204,26 @@ Shader "STE/Terrain" {
 
                 float4 shadowColor = lerp(color,_ShadowColor,_ShadowColor.a);
 
-                float4 final = lerp(shadowColor,color,shadow) * float4(mainLight.color.rgb,1.0);
 
+                float3 additionalLightDiffuse = float3(0,0,0);
+                float3 additionalLightSpecular = float3(0,0,0);
+
+
+                AdditionalLightsToon_float(
+                    float3(1,1,1),
+                    0.1,
+                    IN.positionWS,
+                    IN.normalWS,
+                    IN.worldViewDir,
+                    float4(1.0,1.0,1.0,1.0),
+                    4,
+                    4,
+                    additionalLightDiffuse,
+                    additionalLightSpecular
+                );
+                float3 ambient = float3(0,0,0);
+                AmbientSampleSH_float(IN.normalWS, ambient);
+                float4 final = lerp(shadowColor,color,shadow) * float4(mainLight.color.rgb + additionalLightDiffuse + ambient,1.0);
 
 
                 return final;
@@ -244,7 +255,6 @@ Shader "STE/Terrain" {
             #pragma vertex DepthOnlyVertex
             #pragma fragment DepthOnlyFragment
              
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthOnlyPass.hlsl"
  
@@ -277,7 +287,6 @@ Shader "STE/Terrain" {
             #pragma vertex ShadowPassVertex
             #pragma fragment ShadowPassFragment
      
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/ShadowCasterPass.hlsl"
  

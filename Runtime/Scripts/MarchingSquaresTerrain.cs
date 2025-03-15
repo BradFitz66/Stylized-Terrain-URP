@@ -1,4 +1,4 @@
-using Codice.Client.Common;
+using LibNoise.Operator;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,9 +6,9 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Mathematics;
 using Unity.Profiling;
 using UnityEngine;
+
 
 [System.Serializable]
 public struct DetailObject
@@ -129,19 +129,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
         argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
         args[1] = (uint)allDetail.Count;
         argsBuffer.SetData(args);
-    }
-
-
-
-    // Taken from:
-    // http://extremelearning.com.au/unreasonable-effectiveness-of-quasirandom-sequences/
-    // https://www.shadertoy.com/view/4dtBWH
-    private Vector2 Nth_weyl(Vector2 p0, float n)
-    {
-        Vector2 res = p0 + n * new Vector2(0.754877669f, 0.569840296f);
-        res.x %= 1;
-        res.y %= 1;
-        return res;
     }
 
     public void UpdateDetailBuffer()
@@ -443,8 +430,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
                 if(chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
                     continue;
-                
-
 
                 DetailObject d = allDetail[index];
                 Vector3 pos = hit.point;
@@ -542,17 +527,178 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDetailBuffer();
     }
 
-    
-
-    internal void DrawHeights(List<Vector2Int> cellPositions, MarchingSquaresChunk chunk,float dragHeight, bool setHeight = false)
+    void UpdateDirtyChunks()
     {
-        chunk.DrawHeights(cellPositions, dragHeight, setHeight);
+        foreach (var chunk in chunks)
+        {
+            if (chunk.Value.IsDirty)
+            {
+                chunk.Value.RegenerateMesh();
+            }
+        }
+    }
+
+
+
+
+    internal void DrawHeights(List<Vector3> worldCellPositions,float dragHeight, bool setHeight = false, bool smooth=false)
+    {
+        foreach (Vector3 worldCell in worldCellPositions)
+        {
+            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldCell);
+            foreach(MarchingSquaresChunk chunk in chunks)
+            {
+                var localPos = new Vector2Int(
+                    Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
+                );
+                chunk.DrawHeight(localPos.x, localPos.y, dragHeight, setHeight);
+            }
+        }
+
+        UpdateDirtyChunks();
         UpdateDetailHeight();
     }
 
-    internal void SmoothHeights(List<Vector2Int> localCells, MarchingSquaresChunk c, float setHeight, bool v)
+
+    /// <summary>
+    /// Get the chunks at a given cell's world position
+    /// </summary>
+    /// <param name="worldPosition"></param>
+    internal List<MarchingSquaresChunk> GetChunksAtWorldPosition(Vector3 worldCellPosition)
     {
-        c.SmoothHeights(localCells, setHeight, v);
+        List<MarchingSquaresChunk> chunksAtPosition = new List<MarchingSquaresChunk>();
+        //Loop through every chunk and check if the world position is inside the chunk
+        foreach (var chunk in chunks)
+        {
+            Vector2Int localCellPos = new Vector2Int(
+                Mathf.FloorToInt((worldCellPosition.x - chunk.Value.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((worldCellPosition.z - chunk.Value.transform.position.z) / cellSize.y)
+            );
+            bool inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
+            if (inBounds && !chunksAtPosition.Contains(chunk.Value))
+            {
+                chunksAtPosition.Add(chunk.Value);
+            }
+        }
+
+        chunksAtPosition = chunksAtPosition.Distinct().ToList();
+
+        return chunksAtPosition;
+    }
+
+    internal float GetHeight(Vector3 worldPos, MarchingSquaresChunk c=null)
+    {
+        //worldPos can actually belong to multiple chunks at once (maximum of 4 if it's in a corner of a chunk)
+
+        float height = 0;
+        //The size of one chunk
+        Vector3 totalChunkSize= new Vector3(
+            (dimensions.x - 1) * cellSize.x,
+            0,
+            (dimensions.z - 1) * cellSize.y
+        );
+
+        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
+        foreach (MarchingSquaresChunk chunk in chunks)
+        {
+            if (c != null)
+            {
+                if (chunk != c)
+                    continue;
+            }
+            //Get the local cell position
+            Vector2Int localCellPos = new Vector2Int(
+                Mathf.FloorToInt((worldPos.x - chunk.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((worldPos.z - chunk.transform.position.z) / cellSize.y)
+            );
+            height = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+        }
+
+
+        return height;
+    }
+
+    internal void SetHeight(Vector3 worldPos)
+    {
+        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
+        foreach (MarchingSquaresChunk chunk in chunks)
+        {
+            //Get the local cell position
+            Vector2Int localCellPos = new Vector2Int(
+                Mathf.FloorToInt((worldPos.x - chunk.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((worldPos.z - chunk.transform.position.z) / cellSize.y)
+            );
+            chunk.DrawHeight(localCellPos.x, localCellPos.y, worldPos.y, true);
+        }
+        UpdateDirtyChunks();
         UpdateDetailHeight();
+    }
+
+    internal void SmoothHeights(List<Vector3> cells)
+    {
+
+        //Store the height values of all cells
+        Dictionary<Vector3, List<float>> heights = new Dictionary<Vector3, List<float>>();
+
+        foreach (Vector3 cell in cells)
+        {
+            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(cell);
+            foreach (MarchingSquaresChunk chunk in chunks)
+            {
+                //Get world position neighbors, this way we can correctly smooth between chunks
+                for (int z = -1; z <= 1; z++)
+                {
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        Vector3 neighbor = new Vector3(
+                            cell.x + x * cellSize.x,
+                            0,
+                            cell.z + z * cellSize.y
+                        );
+                        foreach (MarchingSquaresChunk nChunk in GetChunksAtWorldPosition(neighbor))
+                        {
+                            Vector2Int localCellPos = new Vector2Int(
+                                Mathf.FloorToInt((neighbor.x - nChunk.transform.position.x) / cellSize.x),
+                                Mathf.FloorToInt((neighbor.z - nChunk.transform.position.z) / cellSize.y)
+                            );
+                            float height = nChunk.heightMap[nChunk.GetIndex(localCellPos.y, localCellPos.x)];
+                            if (!heights.ContainsKey(cell))
+                                heights.Add(cell, new List<float>());
+                            else 
+                                heights[cell].Add(height);
+                        }
+                    }
+                }
+            }
+        }
+
+        //Average the heights
+        foreach (var cell in heights)
+        {
+            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(cell.Key);
+            foreach (MarchingSquaresChunk chunk in chunks)
+            {
+                //Get the local cell position
+                Vector2Int localCellPos = new Vector2Int(
+                    Mathf.FloorToInt((cell.Key.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((cell.Key.z - chunk.transform.position.z) / cellSize.y)
+                );
+                List<float> h = cell.Value;
+                //Smooth heights
+                float curHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+
+                chunk.DrawHeight(
+                    localCellPos.x, 
+                    localCellPos.y,
+                    Mathf.Lerp(curHeight, h.Average(), 0.15f), 
+                    true
+                );
+            }
+        }
+
+
+        UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
+        UpdateDetailHeight(); //Update the detail objects
     }
 }

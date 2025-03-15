@@ -628,7 +628,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "Tile",
     "m_StageCapability": 3,
-    "m_Value": 1.0,
+    "m_Value": 4.0,
     "m_DefaultValue": 1.0,
     "m_Labels": []
 }
@@ -824,10 +824,10 @@
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -789.0000610351563,
-            "y": 362.0000305175781,
-            "width": 103.99993896484375,
-            "height": 33.999969482421878
+            "x": -841.0,
+            "y": 304.0,
+            "width": 104.0,
+            "height": 34.0
         }
     },
     "m_Slots": [

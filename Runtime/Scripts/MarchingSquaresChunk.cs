@@ -947,6 +947,8 @@ public class MarchingSquaresChunk : MonoBehaviour
     public float[] heightMap;
     public float4[] colorMap;
 
+    public bool IsDirty = false;
+
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
 
@@ -981,6 +983,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         //Check if within bounds
         if (x < 0 || x >= terrain.dimensions.x || z < 0 || z >= terrain.dimensions.z)
         {
+            print("Out of bounds");
             return 0;
         }
 
@@ -991,7 +994,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     {
         mesh.Clear();
 
-        JobHandle handle = GenerateTerrainCells();
+        GenerateTerrainCells();
 
         MeshRenderer r = gameObject.GetComponent<MeshRenderer>();
         MeshFilter mf = gameObject.GetComponent<MeshFilter>();
@@ -1001,13 +1004,15 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         MeshCollider mc = gameObject.GetComponent<MeshCollider>();
         mc.sharedMesh = mf.sharedMesh;
+
+        IsDirty = false;
     }
 
     private void OnDestroy()
     {
     }
 
-    public JobHandle GenerateTerrainCells()
+    public void GenerateTerrainCells()
     {
 
         
@@ -1076,9 +1081,6 @@ public class MarchingSquaresChunk : MonoBehaviour
         job.uvs.Dispose();
         job.normals.Dispose();
 
-
-
-        return handle;//
     }
 
     public void GenerateHeightmap(NoiseSettings ns)
@@ -1124,94 +1126,60 @@ public class MarchingSquaresChunk : MonoBehaviour
         }
         RegenerateMesh();
     }
-
-    public void DrawHeight(int x, int z, float y)
+    public bool inBounds(int x, int z)
     {
-        heightMap[GetIndex(z, x)] = y;
-        RegenerateMesh();
+        return x >= 0 && x < terrain.dimensions.x && z >= 0 && z < terrain.dimensions.z;
+    }
+
+    public void DrawHeight(int x, int z, float y,bool setHeight = false)
+    {
+        //Within bounds?
+        if (!inBounds(z, x))
+            return;
+
+        heightMap[GetIndex(z, x)] = setHeight ? y : heightMap[GetIndex(z, x)] + y;
+        IsDirty = true;
     }
 
 
-    public void DrawHeights(List<Vector2Int> positions, float height, bool setHeight, bool propogation=false)
+    public void DrawHeights(List<Vector2Int> positions, float height, bool setHeight, bool smooth)
     {
         for (int i = 0; i < positions.Count; i++)
         {
-            if (setHeight)
-                heightMap[GetIndex(positions[i].y, positions[i].x)] = height;
+            if (!inBounds(positions[i].y, positions[i].x))
+                continue;
+            if (smooth)
+            {
+                heightMap[GetIndex(positions[i].y, positions[i].x)] = Mathf.Lerp(heightMap[GetIndex(positions[i].y, positions[i].x)], height, 0.5f);
+            }
             else
-                heightMap[GetIndex(positions[i].y, positions[i].x)] += height;
+            {
+                if (setHeight)
+                    heightMap[GetIndex(positions[i].y, positions[i].x)] = height;
+                else
+                    heightMap[GetIndex(positions[i].y, positions[i].x)] += height;
+            }
         }
-        //Avoid an infinite loop
 
-        RegenerateMesh();
+        IsDirty = true;
     }
 
     public void DrawColor(int x, int z, Color color)
     {
+        if (!inBounds(x, z))
+            return;
         colorMap[GetIndex(x, z)] = color.ToFloat4();
-        RegenerateMesh();
-    }
-
-    void RemakeMeshToDiscrete(float3[] vert, int[] trig, out float3[] outVerts, out int[] outTriangles)
-    {
-        float3[] vertDiscrete = new float3[trig.Length];
-        int[] trigDiscrete = new int[trig.Length];
-        for (int i = 0; i < trig.Length; i++)
-        {
-            vertDiscrete[i] = vert[trig[i]];
-            trigDiscrete[i] = i;
-        }
-
-        outVerts = vertDiscrete; outTriangles = trigDiscrete;
+        IsDirty = true;
     }
 
     internal void DrawColors(List<Vector2Int> value, Color color)
     {
         for (int i = 0; i < value.Count; i++)
         {
+            if (!inBounds((int)value[i].x, (int)value[i].y))
+                continue;
             colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color.ToFloat4();
         }
-        RegenerateMesh();
-    }
-
-    internal void SmoothHeights(List<Vector2Int> localCells, float setHeight, bool v, float smoothStrength = 0.5f, bool propagation=false)
-    {
-        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x - 1, chunkPosition.y), out MarchingSquaresChunk left);
-        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x + 1, chunkPosition.y), out MarchingSquaresChunk right);
-        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x, chunkPosition.y - 1), out MarchingSquaresChunk bottom);
-        terrain.chunks.TryGetValue(new Vector2Int(chunkPosition.x, chunkPosition.y + 1), out MarchingSquaresChunk top);
-
-        for (int i = 0; i < localCells.Count; i++)
-        {
-            int x = localCells[i].x;
-            int z = localCells[i].y;
-            float sum = 0;
-            int count = 0;
-            for (int j = -1; j <= 1; j++)
-            {
-                for (int k = -1; k <= 1; k++)
-                {
-                    if (x + j < 0 || x + j >= terrain.dimensions.x || z + k < 0 || z + k >= terrain.dimensions.z)
-                        continue;
-                    sum += heightMap[GetIndex(z + k, x + j)];
-                    count++;
-                }
-            }
-            heightMap[GetIndex(z, x)] = Mathf.Lerp(heightMap[GetIndex(z, x)], sum / count, smoothStrength);
-        }
-        if (!propagation)
-        {
-            float[] leftBorder = heightMap.Where((v, i) => i % terrain.dimensions.x == 0).ToArray();
-            float[] rightBorder = heightMap.Where((v, i) => i % terrain.dimensions.x == terrain.dimensions.x - 1).ToArray();
-            float[] topBorder = heightMap.Where((v, i) => i < terrain.dimensions.x).ToArray();
-            float[] bottomBorder = heightMap.Where((v, i) => i > terrain.dimensions.x * (terrain.dimensions.z - 1)).ToArray();
-
-            if (left != null)
-            {
-                //Add leftBorder to right border of left chunk
-                left.heightMap = left.heightMap.Select((v, i) => i % terrain.dimensions.x == terrain.dimensions.x - 1 ? leftBorder[i / terrain.dimensions.x] : v).ToArray();
-            }
-        }
-        RegenerateMesh();
+        IsDirty = true;
     }
 }
