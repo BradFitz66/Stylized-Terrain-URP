@@ -25,13 +25,15 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
+  - _ADDITIONAL_LIGHTS
   - _ADDITIONAL_LIGHT_SHADOWS
+  - _FORWARD_PLUS
   - _LIGHT_COOKIES
   - _MAIN_LIGHT_SHADOWS_CASCADE
   m_InvalidKeywords: []
   m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
+  m_EnableInstancingVariants: 1
+  m_DoubleSidedGI: 1
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses:
@@ -73,7 +75,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Ground2:
-        m_Texture: {fileID: 10305, guid: 0000000000000000f000000000000000, type: 0}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Ground3:
@@ -98,6 +100,10 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _ParallaxMap:
         m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _RockNoise:
+        m_Texture: {fileID: 11700000, guid: 261f209fa3576dc40ae4253656983b0c, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _SpecGlossMap:
@@ -126,6 +132,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _ADDITIONAL_LIGHTS: 1
     - _ADDITIONAL_LIGHT_SHADOWS: 1
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
@@ -141,13 +148,15 @@ Material:
     - _Debug: 0
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
+    - _DiffuseOffset: 0
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
+    - _FORWARD_PLUS: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
-    - _Grass_Tiling: 1
+    - _Grass_Tiling: 0.5
     - _LIGHT_COOKIES: 1
     - _MAIN_LIGHT_SHADOWS_CASCADE: 1
     - _Metallic: 0
@@ -170,9 +179,12 @@ Material:
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Diffuse: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _Grass_Color: {r: 1, g: 1, b: 1, a: 1}
+    - _RockColor: {r: 0.3962264, g: 0.28519896, b: 0.15512636, a: 1}
     - _Rock_Color: {r: 0.42452827, g: 0.31598252, b: 0.19824666, a: 1}
+    - _ShadowColor: {r: 0, g: 0, b: 0, a: 0.5019608}
     - _Shadow_Color: {r: 0, g: 0, b: 0, a: 0.5019608}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []

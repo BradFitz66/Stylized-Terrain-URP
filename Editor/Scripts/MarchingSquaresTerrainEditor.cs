@@ -9,7 +9,6 @@ public class MarchingSquaresTerrainEditor : Editor
     [SerializeField]
     int _currentHandle;
 
-    bool showNoise = false;
 
 
     MarchingSquaresTerrain t;
@@ -53,7 +52,7 @@ public class MarchingSquaresTerrainEditor : Editor
             tools.GetArrayElementAtIndex(0).objectReferenceValue = CreateInstance<ChunkBrush>();
 
         if (tools.GetArrayElementAtIndex(1).objectReferenceValue == null)
-            tools.GetArrayElementAtIndex(1).objectReferenceValue = CreateInstance<TerrainBrush>();
+            tools.GetArrayElementAtIndex(1).objectReferenceValue = CreateInstance<SculptBrush>();
 
         if (tools.GetArrayElementAtIndex(2).objectReferenceValue == null)
             tools.GetArrayElementAtIndex(2).objectReferenceValue = CreateInstance<TextureBrush>();

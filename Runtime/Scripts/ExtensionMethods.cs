@@ -1,6 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEngine;
 using static UnityEngine.BoundsInt;
 
@@ -71,6 +74,32 @@ public static class ExtensionMethods
             Vector3Int.FloorToInt(bounds.size)
         );
         return b.allPositionsWithin;
+    }
+
+    //Cast color to float4
+    public static float4 ToFloat4(this Color c)
+    {
+        return new float4(c.r, c.g, c.b, c.a);
+    }
+
+    //Cast float4 to color
+    public static Color ToColor(this float4 f)
+    {
+        return new Color(f.x, f.y, f.z, f.w);
+    }
+
+    public static bool equal(this float4 a, float4 b)
+    {
+        return math.all(math.abs(a - b) < 0.0001f);
+    }
+
+
+
+    public static unsafe NativeArray<T> ToArray<T>(this in UnsafeList<T> list) where T : unmanaged
+    {
+        NativeArray<T> result = new NativeArray<T>(list.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        UnsafeUtility.MemCpy(result.GetUnsafePtr(), list.Ptr, (long)list.Length * sizeof(T));
+        return result;
     }
 
 }
