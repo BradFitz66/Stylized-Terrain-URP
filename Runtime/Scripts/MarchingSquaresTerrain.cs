@@ -560,6 +560,23 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDetailHeight();
     }
 
+    internal void DrawColors(List<Vector3> worldCellPositions, Color color)
+    {
+        foreach (Vector3 worldCell in worldCellPositions)
+        {
+            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldCell);
+            foreach (MarchingSquaresChunk chunk in chunks)
+            {
+                var localPos = new Vector2Int(
+                    Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
+                );
+                chunk.DrawColor(localPos.x, localPos.y, color);
+            }
+        }
+        UpdateDirtyChunks();
+    }
+
 
     /// <summary>
     /// Get the chunks at a given cell's world position

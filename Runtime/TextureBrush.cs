@@ -7,57 +7,41 @@ using System.Collections.Generic;
 public class TextureBrush : TerrainTool
 {
     Vector3 mousePosition;
-    Vector3 cellPosWorld;
     Vector3 totalTerrainSize;
-
-    Vector2 viewportMousePosition;
-
-    Vector2Int chunkPos;
-    Vector2Int cellPos;
 
     [SerializeField]
     Texture2D[] Layers;
 
     GUIContent[] textureContent;
 
-
     bool mouseDown = false;
 
     int selectedTexture = 0;
-    float height = 0;
+
     float brushSize = 2;
 
-    //cell world position, chunkPos
-    Dictionary<Vector2Int, List<Vector3>> selectedCells = new Dictionary<Vector2Int, List<Vector3>>();
+    List<Vector3> selectedCells = new List<Vector3>();
+
     public Color color = Color.white;
 
     public override void DrawHandles()
     {
         Handles.color = Color.green;
-
+        List<MarchingSquaresChunk> marchingSquaresChunks;
         foreach (var cell in selectedCells)
         {
-            if (!t.chunks.ContainsKey(cell.Key))
-            {
-                selectedCells.Clear();
+            marchingSquaresChunks = t.GetChunksAtWorldPosition(cell);
+
+            if (marchingSquaresChunks.Count == 0)
                 break;
-            }
-            MarchingSquaresChunk c = t.chunks[cell.Key];
 
-            //for (int i = 0; i < cell.Value.Count; i++)
-            //{
-            //    Vector3 p = cell.Value[i];
-            //    Handles.DrawSolidDisc(p + Vector3.up * c.heightMap[c.GetIndex(cell.Key.y, cell.Key.x)], Vector3.up, brushSize / 2);
-            //}
-
-            Handles.color = Color.yellow;
-            Vector3 chunkWorldPos = new Vector3(
-                c.transform.position.x + totalTerrainSize.x / 2,
-                0,
-                c.transform.position.z + totalTerrainSize.z / 2
+            MarchingSquaresChunk c = marchingSquaresChunks[0];
+            Vector2Int localCell = new Vector2Int(
+                Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
+                Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
             );
-            Handles.DrawWireCube(chunkWorldPos, totalTerrainSize);
 
+            Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, brushSize / 2);
         }
     }
 
@@ -114,15 +98,6 @@ public class TextureBrush : TerrainTool
         if (button == 0)
             mouseDown = true;
     }
-    public override void OnMouseDrag(Vector2 delta)
-    {
-        if (!mouseDown)
-            return;
-        if (t.chunks.ContainsKey(chunkPos))
-        {
-
-        }
-    }
     public override void OnMouseUp(int button = 0)
     {
         if (button == 0)
@@ -161,7 +136,6 @@ public class TextureBrush : TerrainTool
                 break;
         }
 
-        viewportMousePosition = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
@@ -192,56 +166,21 @@ public class TextureBrush : TerrainTool
 
                 bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y),cellWorld) <= brushSize / 2;
 
-                if (t.chunks.ContainsKey(chunk) && insideRadius)
+                List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
+
+                if (!selectedCells.Contains(cellWorld) && insideRadius && chunks.Count>0)
                 {
-                    if (!selectedCells.ContainsKey(chunk))
-                    {
-                        selectedCells.Add(chunk, new List<Vector3>());
-                        selectedCells[chunk].Add(cellWorld);
-                    }
-                    else
-                    {
-                        if (!selectedCells[chunk].Contains(cellWorld))
-                            selectedCells[chunk].Add(cellWorld);
-                    }
+                    selectedCells.Add(cellWorld);
                 }
             }
         }
 
         if (mouseDown)
         {
-            foreach (var cell in selectedCells)
-            {
-                if (!t.chunks.ContainsKey(cell.Key))
-                {
-                    selectedCells.Clear();
-                    break;
-                }
-                MarchingSquaresChunk c = t.chunks[cell.Key];
-                List<Vector2Int> localCells = cell.Value.ConvertAll(v => new Vector2Int(
-                    Mathf.FloorToInt((v.x - c.transform.position.x) / t.cellSize.x),
-                    Mathf.FloorToInt((v.z - c.transform.position.z) / t.cellSize.y)
-                ));
-                c.DrawColors(localCells, color);
-            }
+            t.DrawColors(selectedCells, color);
         }
 
-        chunkPos = new Vector2Int(
-            Mathf.FloorToInt(mousePosition.x / totalTerrainSize.x),
-            Mathf.FloorToInt(mousePosition.z / totalTerrainSize.z)
-        );
-
-        cellPosWorld = mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);
-
-        if (t.chunks.ContainsKey(chunkPos))
-        {
-            cellPos = new Vector2Int(
-                Mathf.FloorToInt((cellPosWorld.x - t.chunks[chunkPos].transform.position.x) / t.cellSize.x),
-                Mathf.FloorToInt((cellPosWorld.z - t.chunks[chunkPos].transform.position.z) / t.cellSize.y)
-            );
-            height = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].GetIndex(cellPos.y, cellPos.x)];
-        }
-
+        selectedCells.Clear();
     }
 
 
