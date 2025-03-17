@@ -823,14 +823,17 @@ struct GenerateChunkJob : IJobParallelFor
         float4 color = new float4(1, 1, 1, 1);
         if (diagMidpoint)
         {
-            int idx1 = GetIndex(cellCoords.x, cellCoords.y);
-            int idx2 = GetIndex(cellCoords.x + 1, cellCoords.y);
-            int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
-            int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
+            var adColor = math.lerp(
+                colorMap[cellCoords.y*terrainSize.x + cellCoords.x],
+                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x + 1],
+                .5f
+            );
+            var bcColor = math.lerp(
+                colorMap[cellCoords.y * terrainSize.x + cellCoords.x +1],
+                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x],
+                .5f
+            );
 
-            var adColor = math.lerp(colorMap[idx1], colorMap[idx4], .5f);
-
-            var bcColor = math.lerp(colorMap[idx2], colorMap[idx3], .5f);
             color = new float4(
                 Mathf.Min(adColor.x, bcColor.x),
                 Mathf.Min(adColor.y, bcColor.y),
@@ -849,19 +852,15 @@ struct GenerateChunkJob : IJobParallelFor
         }
         else
         {
-            int idx1 = GetIndex(cellCoords.x, cellCoords.y);
-            int idx2 = GetIndex(cellCoords.x + 1, cellCoords.y);
-            int idx3 = GetIndex(cellCoords.x, cellCoords.y + 1);
-            int idx4 = GetIndex(cellCoords.x + 1, cellCoords.y + 1);
 
             var abColor = math.lerp(
-                colorMap[idx1],
-                colorMap[idx2],
+                colorMap[cellCoords.y*terrainSize.x+cellCoords.x],
+                colorMap[cellCoords.y * terrainSize.x + cellCoords.x + 1],
                 x
             );
             var cdColor = math.lerp(
-                colorMap[idx3],
-                colorMap[idx4],
+                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x],
+                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x + 1],
                 x
             );
             color = math.lerp(abColor, cdColor, z);
@@ -1034,7 +1033,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             pointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
             
             //Config
-            higherPolyFloors = false,
+            higherPolyFloors = true,
             cellSize         = terrain.cellSize,
             terrainSize      = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
             mergeThreshold   = terrain.mergeThreshold,

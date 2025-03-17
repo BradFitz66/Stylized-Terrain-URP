@@ -39,14 +39,18 @@ public class SculptBrush : TerrainTool
 
     ToolState state = ToolState.None;
 
+    GUIStyle style = new GUIStyle();
 
     public override void ToolSelected()
     {
         setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
+
     }
+
 
     public override void DrawHandles()
     {
+        style.normal.textColor = Color.black;
 
         Handles.color = Color.green;
         if (state != ToolState.DraggingHeight)
@@ -86,20 +90,22 @@ public class SculptBrush : TerrainTool
             Handles.DrawWireCube(chunkWorldPos, totalTerrainSize);
         }
 
+        Handles.color = Color.black;
         //Draw text to indicate current state
         switch(state)
         {
+            
             case ToolState.SelectingCells:
-                Handles.Label(mousePosition + Vector3.up * 2, "Selecting Cells");
+                Handles.Label(mousePosition + Vector3.up * 2, "Selecting Cells",style);
                 break;
             case ToolState.SelectedCells:
-                Handles.Label(mousePosition + Vector3.up * 2, "Selected Cells");
+                Handles.Label(mousePosition + Vector3.up * 2, "Selected Cells",style);
                 break;
             case ToolState.DraggingHeight:
-                Handles.Label(mousePosition + Vector3.up * 2, $"Dragging Height: {dragHeight}");
+                Handles.Label(mousePosition + Vector3.up * 2, $"Dragging Height: {dragHeight}",style);
                 break;
             case ToolState.SmoothingHeight:
-                Handles.Label(mousePosition + Vector3.up * 2, "Smoothing Height");
+                Handles.Label(mousePosition + Vector3.up * 2, "Smoothing Height",style);
                 break;
         }
     }

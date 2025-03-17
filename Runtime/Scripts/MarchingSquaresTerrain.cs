@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Mathematics;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -160,6 +161,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
             detailBuffer.Release();
     }
 
+    //Biased random function
+    public float Random(float min, float max, float bias)
+    {
+        float r = UnityEngine.Random.Range(min, max);
+        return Mathf.Pow(r, bias);
+    }
+
     public void AddDetail(float size,float normalOffset,Vector3 detailPos,MarchingSquaresChunk chunk)
     {
         //Return if the detail is out of bounds
@@ -198,7 +206,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         {
             trs = trs,
             normal = Vector3.up,
-            normalOffset = normalOffset//Unused in shader
+            normalOffset = normalOffset,
         };
 
         
@@ -452,7 +460,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 {
                     trs = trs,
                     normal = interpolatedNormal,
-                    normalOffset = d.normalOffset //Unused in shader. 
+                    normalOffset = d.normalOffset, //Unused in shader. 
                 });
                 //gotNormals.Dispose();
                 
@@ -560,8 +568,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDetailHeight();
     }
 
-    internal void DrawColors(List<Vector3> worldCellPositions, Color color)
+    internal void DrawColors(List<Vector3> worldCellPositions,Vector3 paintPos,float brushSize, Color color,bool fallOff)
     {
+        AnimationCurve fallOffCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
         foreach (Vector3 worldCell in worldCellPositions)
         {
             List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldCell);
@@ -571,7 +580,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
                     Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
                     Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
                 );
-                chunk.DrawColor(localPos.x, localPos.y, color);
+                float dist = Vector3.Distance(worldCell, paintPos);
+                var t = (brushSize/2 - dist) / brushSize/2;
+                Color color1 = color;
+                Color color2 = GetColor(worldCell);
+
+                chunk.DrawColor(localPos.x, localPos.y, fallOff ? Color.Lerp(color1,color2,fallOffCurve.Evaluate(t)) : color1);
             }
         }
         UpdateDirtyChunks();
@@ -602,6 +616,27 @@ public class MarchingSquaresTerrain : MonoBehaviour
         chunksAtPosition = chunksAtPosition.Distinct().ToList();
 
         return chunksAtPosition;
+    }
+    internal Color GetColor(Vector3 worldPos)
+    {
+        Color color = Color.white;
+        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
+        foreach (MarchingSquaresChunk chunk in chunks)
+        {
+            //Get the local cell position
+            Vector2Int localCellPos = new Vector2Int(
+                Mathf.FloorToInt((worldPos.x - chunk.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((worldPos.z - chunk.transform.position.z) / cellSize.y)
+            );
+            float4 col = chunk.colorMap[chunk.GetIndex(localCellPos.x, localCellPos.y)];
+            color = new Color(
+                col.x,
+                col.y,
+                col.z,
+                col.w
+            );
+        }
+        return color;
     }
 
     internal float GetHeight(Vector3 worldPos, MarchingSquaresChunk c=null)

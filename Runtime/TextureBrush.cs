@@ -15,6 +15,7 @@ public class TextureBrush : TerrainTool
     GUIContent[] textureContent;
 
     bool mouseDown = false;
+    bool fallOff = false;
 
     int selectedTexture = 0;
 
@@ -24,8 +25,13 @@ public class TextureBrush : TerrainTool
 
     public Color color = Color.white;
 
+    GUIStyle labelStyle = new GUIStyle();
+
+    AnimationCurve falloffCurve = AnimationCurve.Linear(0,1,1,0);
     public override void DrawHandles()
     {
+        falloffCurve = AnimationCurve.Linear(0, 1, 1, 0);
+        labelStyle.normal.textColor = Color.black;
         Handles.color = Color.green;
         List<MarchingSquaresChunk> marchingSquaresChunks;
         foreach (var cell in selectedCells)
@@ -35,20 +41,26 @@ public class TextureBrush : TerrainTool
             if (marchingSquaresChunks.Count == 0)
                 break;
 
+            float dist = Vector3.Distance(cell, mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y));
+            float falloff = fallOff 
+                            ? falloffCurve.Evaluate(((brushSize / 2) - dist) / (brushSize / 2)) 
+                            : 0;
+
             MarchingSquaresChunk c = marchingSquaresChunks[0];
             Vector2Int localCell = new Vector2Int(
                 Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
                 Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
             );
 
-            Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, brushSize / 2);
+            Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, Mathf.Lerp(t.cellSize.x / 2, 0, falloff));
         }
-    }
 
+        selectedCells.Clear();
+    }
 
     public override void ToolSelected()
     {
-        if (Layers == null || Layers.Length < 4 )
+        if (Layers == null || Layers.Length < 4)
         {
             Layers = new Texture2D[4];
         }
@@ -59,7 +71,6 @@ public class TextureBrush : TerrainTool
             new GUIContent("B"),
             new GUIContent("A")
         };
-        
 
     }
 
@@ -91,7 +102,7 @@ public class TextureBrush : TerrainTool
 
     }
 
-
+    
 
     public override void OnMouseDown(int button = 0)
     {
@@ -140,35 +151,22 @@ public class TextureBrush : TerrainTool
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000, 1 << t.gameObject.layer);
-        if (!hit)
-        {
-            Debug.Log("No hit");
-        }
         mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
 
         for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
         {
             for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
             {
-                Vector3 p = new Vector3(x,0, y);
+                Vector3 p = new Vector3(x, 0, y);
                 Vector3 mouseOffset = mousePosition + p;
-                //Snap to cell size
-
-                //Get chunk position at mouseOffset
-                Vector2Int chunk = new Vector2Int(
-                    Mathf.FloorToInt(mouseOffset.x / totalTerrainSize.x),
-                    Mathf.FloorToInt(mouseOffset.z / totalTerrainSize.z)
-                );
-                float wX = (chunk.x * (t.dimensions.x - 1)) + x;
-                float wZ = (chunk.y * (t.dimensions.z - 1)) + y;
                 Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
 
-                bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y),cellWorld) <= brushSize / 2;
+                bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= brushSize / 2;
 
                 List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
 
-                if (!selectedCells.Contains(cellWorld) && insideRadius && chunks.Count>0)
+                if (!selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
                 {
                     selectedCells.Add(cellWorld);
                 }
@@ -177,10 +175,23 @@ public class TextureBrush : TerrainTool
 
         if (mouseDown)
         {
-            t.DrawColors(selectedCells, color);
+            t.DrawColors(selectedCells, mousePosition, brushSize, color, fallOff);
         }
 
-        selectedCells.Clear();
+        if(Event.current.type == EventType.KeyDown)
+        {
+            if (Event.current.keyCode == KeyCode.LeftShift)
+            {
+                fallOff = true;
+            }
+        }
+        else if (Event.current.type == EventType.KeyUp)
+        {
+            if (Event.current.keyCode == KeyCode.LeftShift)
+            {
+                fallOff = false;
+            }
+        }
     }
 
 
@@ -188,6 +199,7 @@ public class TextureBrush : TerrainTool
     public override void OnInspectorGUI()
     {
         EditorGUILayout.LabelField("Brush Size: " + brushSize);
+        EditorGUILayout.LabelField("Hold shift to enable falloff");
 
         EditorGUILayout.Space();
         //selectedTexture = GUILayout.Toolbar(selectedTexture, textureContent,GUILayout.MaxHeight(32),GUILayout.MaxWidth(48*4));
@@ -197,10 +209,10 @@ public class TextureBrush : TerrainTool
         for (int i = 0; i < Layers.Length; i++)
         {
             EditorGUILayout.BeginVertical();
-            Texture2D tex = (Texture2D)EditorGUILayout.ObjectField("", Layers[i], typeof(Texture2D), false,GUILayout.MaxWidth(64));
+            Texture2D tex = (Texture2D)EditorGUILayout.ObjectField("", Layers[i], typeof(Texture2D), false, GUILayout.MaxWidth(64));
             if (GUILayout.Toggle(selectedTexture == i, textureContent[i]))
                 selectedTexture = i;
-            
+
             EditorGUILayout.EndVertical();
             if (tex != Layers[i])
             {
