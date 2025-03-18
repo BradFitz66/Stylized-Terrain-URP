@@ -266,8 +266,7 @@ Shader "Instanced/Grass" {
                     additionalLightSpecular
                 );
 
-                half4 final = lerp(shadowColor,color,shadow) * float4(mainLight.color.rgb + additionalLightDiffuse,1.0);
-                final *= float4(ambient,1.0);
+                half4 final = lerp(shadowColor,color,shadow) * float4((mainLight.color.rgb*ambient.rgb) + additionalLightDiffuse,1.0);
                 
 
                 if (color.a < 0.1)
