@@ -33,6 +33,10 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _CloudGradient:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -88,6 +92,8 @@ Material:
     m_Ints:
     - _AtlasIndex: 0
     - _AtlasTiles: 2
+    - _PointLightBands: 8
+    - _SpotLightBands: 8
     m_Floats:
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
@@ -97,6 +103,13 @@ Material:
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
+    - _CloudBrightness: 1
+    - _CloudDensity: -0.28
+    - _CloudScale: 0.1
+    - _CloudSpeed: 6
+    - _CloudSpeedX: 4
+    - _CloudSpeedY: 0
+    - _CloudVerticalSpeed: 0
     - _Cull: 2
     - _Cutoff: 0.5
     - _DetailAlbedoMapScale: 1

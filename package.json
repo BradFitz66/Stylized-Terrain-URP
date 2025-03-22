@@ -1,11 +1,15 @@
 {
-  "name": "com.ducktor.stylizedterrain",
-  "version": "0.0.4",
-  "displayName": "Stylized Terrain Editor",
-  "description": "A custom terrain solution for stylized terrain similar to the work of t3ssel8r on youtube",
-  "unity": "6000.0",
-  "unityRelease": "29f1",
-  "author": {
-    "name": "Ducktor"
-  }
+	"name": "com.ducktor.stylizedterrain",
+	"version": "0.0.4",
+	"displayName": "Stylized Terrain Editor",
+	"description": "A custom terrain solution for stylized terrain similar to the work of t3ssel8r on youtube",
+	"unity": "6000.0",
+	"unityRelease": "29f1",
+	"author": {
+		"name": "Ducktor"
+	},
+	"dependencies": {
+		"com.unity.burst": "1.8.18",
+		"com.unity.collections": "2.5.1"
+	}
 }

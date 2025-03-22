@@ -1,21 +1,20 @@
-using LibNoise.Operator;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-using Unity.Collections;
-using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Profiling;
 using UnityEngine;
-
+using NativeTrees;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 
 [System.Serializable]
 public struct DetailObject
 {
-    public Matrix4x4 trs;
-    public Vector3 normal;
+    public float4x4 trs;
+    public float3 normal;
     public float normalOffset;
 }
 
@@ -52,12 +51,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     ComputeBuffer detailBuffer;
     ComputeBuffer argsBuffer;
-    [SerializeField]
-    List<DetailObject> allDetail;
+    
+    //List<DetailObject> allDetail;
+
+    
+
     uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
     MaterialPropertyBlock mpb;
 
-    
+    NativeQuadtree<DetailObject> detailQuadtree;
+
 
     public Vector3Int dimensions = new Vector3Int(10, 10, 10);
     public Bounds totalTerrainSize
@@ -88,6 +91,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public List<MarchingSquaresChunk> chunkValues = new List<MarchingSquaresChunk>();
 
     public SerializedDictionary<Vector2Int, MarchingSquaresChunk> chunks = new SerializedDictionary<Vector2Int, MarchingSquaresChunk>();
+    public SerializedDictionary<Vector2Int, List<DetailObject>> detailChunks = new SerializedDictionary<Vector2Int, List<DetailObject>>();
+
     public Texture2D[] groundTextures = new Texture2D[4];
     public NoiseSettings noiseSettings;
 
@@ -102,10 +107,20 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public float detailDensity = 0.1f; //Minimum distance between details
     public float currentDetailDensity = 0.1f;
 
+    public float cloudDensity = 0.1f;
+    public Vector2 cloudSpeed = Vector2.zero;
+    public float cloudScale = 0.1f;
+    public float cloudBrightness;
+    public float cloudVerticalSpeed;
+
+
+    public int detailCount => detailChunks.Values.SelectMany(x => x).Count();
+    public DetailObject[] detailData => detailChunks.Values.SelectMany(x => x).ToArray();
+
     private void Awake()
     {
 
-        args = new uint[5] { detailMesh.GetIndexCount(0), (uint)allDetail.Count, detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
+        args = new uint[5] { detailMesh.GetIndexCount(0), (uint)detailCount, detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
         if (argsBuffer == null)
         {
             argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
@@ -118,8 +133,15 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (detailBuffer == null)
         {
             detailBuffer = new ComputeBuffer(1000000, Marshal.SizeOf(typeof(DetailObject))); //Preallocate 1million details
-            detailBuffer.SetData(allDetail.ToArray());
+            detailBuffer.SetData(detailData);
         }
+        UpdateDetailBuffer();
+    }
+
+    private void OnValidate()
+    {
+        UpdateClouds();
+
     }
 
     void InitializeBuffers()
@@ -128,25 +150,28 @@ public class MarchingSquaresTerrain : MonoBehaviour
         argsBuffer?.Release();
         detailBuffer?.Release();
         argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
-        args[1] = (uint)allDetail.Count;
+        args[1] = (uint)detailCount;
         argsBuffer.SetData(args);
     }
 
     public void UpdateDetailBuffer()
     {
+        args[1] = (uint)detailCount;
+        argsBuffer.SetData(args);
+
         if (mpb == null)
             mpb = new MaterialPropertyBlock();
-        if (allDetail.Count == 0)
+        if (detailCount == 0)
             return;
         if (detailBuffer == null)
             detailBuffer = new ComputeBuffer(1000000, Marshal.SizeOf(typeof(DetailObject)));
 
         //Append new data to the buffer
         detailBuffer.SetData(
-            allDetail.ToArray(),
-            0, 
-            0, 
-            allDetail.Count
+            detailData,
+            0,
+            0,
+            detailCount
         );
 
         mpb?.SetBuffer("_TerrainDetail", detailBuffer);
@@ -168,24 +193,59 @@ public class MarchingSquaresTerrain : MonoBehaviour
         return Mathf.Pow(r, bias);
     }
 
-    public void AddDetail(float size,float normalOffset,Vector3 detailPos,MarchingSquaresChunk chunk)
+    Vector3 Barycentric(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
     {
+        Vector3 v0 = b - a, v1 = c - a, v2 = p - a;
+        float d00 = Vector3.Dot(v0, v0);
+        float d01 = Vector3.Dot(v0, v1);
+        float d11 = Vector3.Dot(v1, v1);
+        float d20 = Vector3.Dot(v2, v0);
+        float d21 = Vector3.Dot(v2, v1);
+        float denom = d00 * d11 - d01 * d01;
+        float v = (d11 * d20 - d01 * d21) / denom;
+        float w = (d00 * d21 - d01 * d20) / denom;
+        float u = 1.0f - v - w;
+
+        return new Vector3(u, v, w);
+    }
+
+    public void AddDetail(float size,float normalOffset,float3 detailPos,MarchingSquaresChunk chunk)
+    {
+        [BurstCompile]
+        bool checkDistance(DetailObject d)
+        {
+            float3 pos = new float3(
+                d.trs.c3.x,
+                d.trs.c3.y,
+                d.trs.c3.z
+            );
+            return math.distance(pos, detailPos) < currentDetailDensity;
+        }
+
         //Return if the detail is out of bounds
         if (!totalTerrainSize.Contains(detailPos))
             return;
 
-        bool canPlace = true;
-        Parallel.ForEach(allDetail, (d) =>
+        var chunks = GetChunksAtWorldPosition(detailPos);
+        if(chunks.Count == 0)
+            return;
+
+        MarchingSquaresChunk c = chunks[0];
+        
+        if (!detailChunks.ContainsKey(c.chunkPosition))
         {
-            Vector3 dPosXZ = new Vector3(detailPos.x, 0, detailPos.z);
-            
-            Vector3 detailPosXZ = new Vector3(d.trs.GetPosition().x, 0, d.trs.GetPosition().z);
-            if (Vector3.Distance(detailPosXZ, dPosXZ) <= currentDetailDensity)
+            detailChunks.Add(c.chunkPosition, new List<DetailObject>());
+        }
+
+        bool canPlace = true;
+        foreach (var d in detailChunks[c.chunkPosition])
+        {
+            if(checkDistance(d))
             {
                 canPlace = false;
-                return;
+                break;
             }
-        });
+        }
 
 
         if (!canPlace)
@@ -193,8 +253,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         //Round detailPos to the nearest cell
         Vector2Int cellPos = new Vector2Int(
-            Mathf.FloorToInt((detailPos.x - chunk.transform.position.x) / cellSize.x),
-            Mathf.FloorToInt((detailPos.z - chunk.transform.position.z) / cellSize.y)
+            Mathf.FloorToInt((detailPos.x - c.transform.position.x) / cellSize.x),
+            Mathf.FloorToInt((detailPos.z - c.transform.position.z) / cellSize.y)
         );
 
         float height = chunk.heightMap[chunk.GetIndex(cellPos.y, cellPos.x)];
@@ -209,11 +269,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
             normalOffset = normalOffset,
         };
 
-        
+        detailChunks[c.chunkPosition].Add(detailObject);
 
-
-        allDetail.Add(detailObject);
-        UpdateDetailHeight();
+        //allDetail.Add(detailObject);
+        UpdateDetailHeight(c);
     }
 
 
@@ -332,9 +391,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
             chunk.Value.GenerateHeightmap(
                 noiseSettings
             );
+            UpdateDetailHeight(chunk.Value);
         }
 
-        UpdateDetailHeight();
 
     }
     public void RemoveChunk(Vector2Int coords)
@@ -356,9 +415,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
             chunks.Remove(coords);
         }
 
-
-
-        UpdateDetailHeight();
+        if (detailChunks.ContainsKey(coords))
+        {
+            detailChunks.Remove(coords);
+            UpdateDetailBuffer();
+        }
     }
 
     void AddChunk(Vector2Int coords, MarchingSquaresChunk chunk, bool regenMesh = true)
@@ -382,12 +443,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
         chunk.transform.parent = transform;
         chunk.InitializeTerrain();
     }
-
-    Mesh m;
-    List<Vector3> normals;
-    int[] triangles;
-    void UpdateDetailHeight()
+    void UpdateDetailHeight(MarchingSquaresChunk chunk)
     {
+        Vector2Int chunkPos = chunk.chunkPosition;
+        if (!detailChunks.ContainsKey(chunkPos))
+            return;
+        int count = detailChunks[chunkPos].Count;
+
+        var results = new NativeArray<RaycastHit>(count, Allocator.TempJob);
+        var commands = new NativeArray<RaycastCommand>(count, Allocator.TempJob);
+
         List<DetailObject> newDetailList = new List<DetailObject>();
 
         /*
@@ -397,20 +462,17 @@ public class MarchingSquaresTerrain : MonoBehaviour
          * we don't add the detail object to the new list.
          */
 
-        var results = new NativeArray<RaycastHit>(allDetail.Count, Allocator.TempJob);
-        var commands = new NativeArray<RaycastCommand>(allDetail.Count, Allocator.TempJob);
-
-        for (int i = 0; i < allDetail.Count; i++)
+        for (int i = 0; i < count; i++)
         {
-            DetailObject d = allDetail[i];
+            DetailObject d = detailChunks[chunkPos][i];
             Vector3 pos = new Vector3(
-                d.trs.GetColumn(3).x,
+                d.trs.c3.x,
                 1000,
-                d.trs.GetColumn(3).z
+                d.trs.c3.z
             );
             commands[i] = new RaycastCommand(
                 pos,
-                Vector3.down*2000,
+                Vector3.down * 2000,
                 QueryParameters.Default
             );
         }
@@ -418,30 +480,35 @@ public class MarchingSquaresTerrain : MonoBehaviour
         JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1,default(JobHandle));
 
         handle.Complete();
-        
+
 
         int index = 0;
 
-        Mesh.MeshDataArray meshDataArray;
 
         ProfilerMarker pm = new ProfilerMarker("UpdateDetailHeight.ResultLoop");
         pm.Begin();
-        foreach (var hit in results) { 
+        foreach (var hit in results)
+        {
             if (hit.collider != null)
             {
                 if (hit.transform.GetComponent<MeshFilter>() == null)
                     continue;
 
-                MarchingSquaresChunk chunk = hit.transform.GetComponent<MarchingSquaresChunk>();
                 if (chunk == null)
                     continue;
 
-                if(chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
+                if (chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
                     continue;
 
-                DetailObject d = allDetail[index];
+                DetailObject d = detailChunks[chunkPos][index];
                 Vector3 pos = hit.point;
-                Vector3 size = d.trs.lossyScale;
+                //Get lossyScale from float4x4
+
+                Vector3 size = new Vector3(
+                    math.length(d.trs.c0),
+                    math.length(d.trs.c1),
+                    math.length(d.trs.c2)
+                );
                 Matrix4x4 trs = Matrix4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
 
                 Vector3 n0 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 0]];
@@ -460,10 +527,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 {
                     trs = trs,
                     normal = interpolatedNormal,
-                    normalOffset = d.normalOffset, //Unused in shader. 
+                    normalOffset = d.normalOffset                
                 });
-                //gotNormals.Dispose();
-                
+
             }
             index++;
         }
@@ -473,7 +539,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         results.Dispose();
         commands.Dispose();
 
-        allDetail = newDetailList;
+        detailChunks[chunkPos] = newDetailList;
 
         UpdateDetailBuffer();
     }
@@ -486,27 +552,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     public void ClearDetails()
     {
-        allDetail.Clear();
-        UpdateDetailHeight();
+        detailChunks.Clear();
     }
 
     private void LateUpdate()
     {
         if (argsBuffer == null || detailBuffer == null) {
             InitializeBuffers();
-            UpdateDetailHeight();
             return;
         }
 
-
-
-        args[0] = detailMesh.GetIndexCount(0);
-        args[1] = (uint)allDetail.Count;
-        args[2] = detailMesh.GetIndexStart(0);
-        args[3] = detailMesh.GetBaseVertex(0);
-
-
-        argsBuffer.SetData(args);
 
         Graphics.DrawMeshInstancedIndirect(
             detailMesh,0,detailMaterial,
@@ -518,19 +573,28 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public void UpdateDensity()
     {
         currentDetailDensity = detailDensity;
-        allDetail.Clear();
+        detailChunks.Clear();
         UpdateDetailBuffer();
     }
 
     internal void RemoveDetail(float brushSize, Vector3 mousePosition)
     {
 
-        //Get all details that are not inside the brush's radius
-        var inRange = from d in allDetail.AsParallel()
-                      where Vector3.Distance(d.trs.GetPosition(), mousePosition) > brushSize/2
-                      select d;
+        var chunks = GetChunksAtWorldPosition(mousePosition);
+        foreach (var chunk in chunks)
+        {
+            if (!detailChunks.ContainsKey(chunk.chunkPosition))
+                continue;
 
-        allDetail = inRange.ToList();
+            float4 mousePos = new float4(mousePosition.x, 0, mousePosition.z,0);
+
+            var inRange = from d in detailChunks[chunk.chunkPosition].AsParallel()
+                          where math.distance(d.trs.c3, mousePos) > brushSize / 2
+                          select d;
+
+            detailChunks[chunk.chunkPosition] = inRange.ToList();
+        }
+
 
         UpdateDetailBuffer();
     }
@@ -543,6 +607,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             {
                 chunk.Value.RegenerateMesh();
             }
+
+            UpdateDetailHeight(chunk.Value);
         }
     }
 
@@ -565,7 +631,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
 
         UpdateDirtyChunks();
-        UpdateDetailHeight();
     }
 
     internal void DrawColors(List<Vector3> worldCellPositions,Vector3 paintPos,float brushSize, Color color,bool fallOff)
@@ -684,7 +749,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
             chunk.DrawHeight(localCellPos.x, localCellPos.y, worldPos.y, true);
         }
         UpdateDirtyChunks();
-        UpdateDetailHeight();
     }
 
     internal void SmoothHeights(List<Vector3> cells)
@@ -751,6 +815,26 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
 
         UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
-        UpdateDetailHeight(); //Update the detail objects
+    }
+
+    Texture2D gradientTextureCache = null;
+    public void UpdateClouds()
+    {
+        terrainMaterial.SetFloat("_CloudDensity", cloudDensity);
+        terrainMaterial.SetFloat("_CloudSpeedX", cloudSpeed.x);
+        terrainMaterial.SetFloat("_CloudSpeedY", cloudSpeed.y);
+        terrainMaterial.SetFloat("_CloudScale", cloudScale);
+        terrainMaterial.SetFloat("_CloudBrightness", cloudBrightness);
+        terrainMaterial.SetFloat("_CloudVerticalSpeed", cloudVerticalSpeed);
+
+        if (detailMaterial)
+        {
+            detailMaterial.SetFloat("_CloudDensity", cloudDensity);
+            detailMaterial.SetFloat("_CloudSpeedX", cloudSpeed.x);
+            detailMaterial.SetFloat("_CloudSpeedY", cloudSpeed.y);
+            detailMaterial.SetFloat("_CloudScale", cloudScale);
+            detailMaterial.SetFloat("_CloudBrightness", cloudBrightness);
+            detailMaterial.SetFloat("_CloudVerticalSpeed", cloudVerticalSpeed);
+        }
     }
 }

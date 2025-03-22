@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 [System.Serializable]
@@ -20,6 +21,12 @@ public class SerializedDictionary<TKey, TValue> : ISerializationCallbackReceiver
     public bool ContainsKey(TKey kay)
     {
         return m_Dict.ContainsKey(kay);
+    }
+
+    public void Clear()
+    {
+        m_Dict.Clear();
+        m_Data.Clear();
     }
 
     public void Add(TKey kay, TValue val)
@@ -66,4 +73,5 @@ public class SerializedDictionary<TKey, TValue> : ISerializationCallbackReceiver
         foreach (var kv in m_Dict)
             m_Data.Add(new KeyValue { key = kv.Key, value = kv.Value });
     }
+
 }

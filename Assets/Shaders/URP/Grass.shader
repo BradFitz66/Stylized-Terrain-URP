@@ -9,14 +9,26 @@ Shader "Instanced/Grass" {
         _AtlasTiles ("Atlas Tiles", Integer) = 1
         _AtlasIndex ("Atlas Index", Integer) = 0
         _NoiseScale ("Noise Scale", Float) = 1
+
+        _SpotLightBands ("Spot Light Bands", Integer) = 4
+        _PointLightBands ("Point Light Bands", Integer) = 4
+
+        _QueueOffset ("Queue Offset", Float) = 0
+
+        [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
+        [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
+        [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
+        [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
+        [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
+        [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
+
+
     }
     SubShader {
-        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalRenderPipeline" }
+        Tags { "RenderType" = "Transparent" "RenderPipeline" = "UniversalRenderPipeline" "Queue" = "Transparent"}
         Cull Off
-        ZWrite On
         Pass {
             HLSLPROGRAM
-            //Turn off backface culling
 
             #pragma vertex vert
             #pragma fragment frag
@@ -29,7 +41,7 @@ Shader "Instanced/Grass" {
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"            
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/CustomLighting.hlsl"
+            #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/Lighting.hlsl"
 
             struct DetailBuffer {
                 float4x4 TRS;
@@ -57,6 +69,16 @@ Shader "Instanced/Grass" {
                 float _AtlasIndex;
 
                 float _NoiseScale;
+
+                int _SpotLightBands;
+                int _PointLightBands;
+
+                float _CloudScale;
+                float _CloudSpeedX;
+                float _CloudSpeedY;
+                float _CloudDensity;
+                float _CloudBrightness;
+                float _CloudVerticalSpeed;
             CBUFFER_END
 
             struct Attributes
@@ -155,7 +177,6 @@ Shader "Instanced/Grass" {
                 
                 float4x4 detailToWorld = _TerrainDetail[instanceID].TRS;
 
-                //Vertex normal inputs
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
 
 
@@ -208,24 +229,6 @@ Shader "Instanced/Grass" {
                 return OUT;
             }
 
-            float ShadowAtten(float3 WorldPos, float4 shadowMask)
-            {
-		        #if defined(_MAIN_LIGHT_SHADOWS_SCREEN) && !defined(_SURFACE_TYPE_TRANSPARENT)
-		        float4 shadowCoord = ComputeScreenPos(TransformWorldToHClip(WorldPos));
-		        #else
-		        float4 shadowCoord = TransformWorldToShadowCoord(WorldPos);
-		        #endif
-		        return MainLightShadow(shadowCoord, WorldPos, shadowMask, _MainLightOcclusionProbes);
-            }
-
-            float toonRamp(float lighting, int shades, float brightness, float minDarkness){
-                float clampedLighting = lighting * shades;
-                float plusBrightness = ceil(clampedLighting + brightness);
-                float ramp = saturate( plusBrightness / shades);
-
-                return lerp(minDarkness, 1.0, ramp);    
-            }
-
             float4 frag(Varyings IN) : SV_Target
             {
                 Light mainLight = GetMainLight();
@@ -233,50 +236,33 @@ Shader "Instanced/Grass" {
                 float4 Shadowmask = SAMPLE_SHADOWMASK(lightmapUV);
 
                 float3 worldPos = IN.positionWS + float3(0,-IN.normalOffset,0);
+                float4 albedo = tex2D(_MainTex, IN.uv_MainTex) * _Diffuse;
 
-                float Cookie = SampleMainLightCookie(worldPos);
-                float atten = ShadowAtten(worldPos,Shadowmask);
-                float nDotL = dot(mainLight.direction, IN.normal) + _DiffuseOffset;
+                CloudNoiseSettings cloudSettings;
+                cloudSettings.Scale = _CloudScale;
+                cloudSettings.Speed = float2(_CloudSpeedX, _CloudSpeedY);
+                cloudSettings.Coverage = _CloudDensity;
+                cloudSettings.Brightness = _CloudBrightness;
+                cloudSettings.VerticalSpeed = _CloudVerticalSpeed;
 
-                float3 ambient = float3(1,1,1);
-                AmbientSampleSH_float(IN.normal, ambient);
-
-                float4 color =  tex2D(_MainTex, IN.uv_MainTex) * _Diffuse;
-                
-
-                float shadow = toonRamp(Cookie * min(nDotL,atten),4,0.25,0);
-
-                float4 shadowColor = lerp(color,_ShadowColor,_ShadowColor.a);
-
-                float3 additionalLightDiffuse = float3(0,0,0);
-                float3 additionalLightSpecular = float3(0,0,0);
-
-
-                
-                AdditionalLightsToon_float(
-                    float3(1,1,1),
-                    0.1,
-                    worldPos,
-                    IN.normal,
-                    GetWorldSpaceNormalizeViewDir(worldPos),
-                    float4(1.0,1.0,1.0,1.0),
-                    4,
-                    4,
-                    additionalLightDiffuse,
-                    additionalLightSpecular
+                float4 lighting = ToonLighting(
+                  albedo,
+                  _ShadowColor,
+                  IN.normal,
+                  _DiffuseOffset,
+                  worldPos,
+                  _PointLightBands,
+                  _SpotLightBands,
+                  cloudSettings
                 );
-
-                half4 final = lerp(shadowColor,color,shadow) * float4((mainLight.color.rgb*ambient.rgb) + additionalLightDiffuse,1.0);
                 
-
-                if (color.a < 0.1)
+                if(albedo.a < 0.1)
                 {
                     discard;
                 }
 
-                return final;
+                return lighting;
             }
-
             ENDHLSL
         }
     }

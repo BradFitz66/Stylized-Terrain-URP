@@ -21,6 +21,11 @@ public class MarchingSquaresTerrainEditor : Editor
     SerializedProperty noiseSettings;
     SerializedProperty heightBanding;
     SerializedProperty detailDensity;
+    SerializedProperty cloudSize;
+    SerializedProperty cloudDensity;
+    SerializedProperty cloudSpeed;
+    SerializedProperty cloudBrightness;
+    SerializedProperty cloudVerticalSpeed;
 
     SerializedProperty lastTool;
     SerializedProperty currentTool;
@@ -43,6 +48,13 @@ public class MarchingSquaresTerrainEditor : Editor
         noiseSettings = serializedObject.FindProperty("noiseSettings");
         heightBanding = serializedObject.FindProperty("heightBanding");
         detailDensity = serializedObject.FindProperty("detailDensity");
+        cloudSize = serializedObject.FindProperty("cloudScale");
+        cloudDensity = serializedObject.FindProperty("cloudDensity");
+        cloudSpeed = serializedObject.FindProperty("cloudSpeed");
+        cloudBrightness = serializedObject.FindProperty("cloudBrightness");
+        cloudVerticalSpeed = serializedObject.FindProperty("cloudVerticalSpeed");
+        
+
 
         if (tools.arraySize != 4)
         {
@@ -89,6 +101,22 @@ public class MarchingSquaresTerrainEditor : Editor
         EditorGUILayout.PropertyField(noiseSettings);
         EditorGUILayout.PropertyField(heightBanding);
         EditorGUILayout.PropertyField(detailDensity);
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Cloud settings", EditorStyles.boldLabel);
+
+        EditorGUI.BeginChangeCheck();
+
+        EditorGUILayout.PropertyField(cloudSize);
+        EditorGUILayout.PropertyField(cloudDensity);
+        EditorGUILayout.PropertyField(cloudSpeed);
+        EditorGUILayout.PropertyField(cloudBrightness);
+        EditorGUILayout.PropertyField(cloudVerticalSpeed);
+
+        if (EditorGUI.EndChangeCheck())
+        {
+            //t.UpdateClouds();
+        }
 
         if (GUILayout.Button("Generate terrain"))
         {

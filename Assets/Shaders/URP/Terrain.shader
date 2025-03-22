@@ -6,6 +6,13 @@ Shader "STE/Terrain" {
         _ShadowColor ("Shadow Color", Color) = (0,0,0,0)
         _DiffuseOffset ("Diffuse Offset", Float) = 0.5
 
+        _LedgeTopThickness ("Ledge Top Thickness", Float) = 0.5
+        _LedgeBottomThickness ("Ledge Bottom Thickness", Float) = 0.5
+        _RockTextureTiling ("Rock Texture Tiling", Float) = 1.0
+
+        _SpotLightBands ("Spot Light Bands", Integer) = 4
+        _PointLightBands ("Point Light Bands", Integer) = 4
+
         //Texture layers
         [HideInInspector]_Ground1("Texture 1", 2D) = "white" {}
         [HideInInspector]_Ground2("Texture 2", 2D) = "white" {}
@@ -13,6 +20,13 @@ Shader "STE/Terrain" {
         [HideInInspector]_Ground4("Texture 4", 2D) = "white" {}
 
         _RockNoise("Rock Noise", 3D) = "white" {}
+
+        [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
+        [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
+        [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
+        [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
+        [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
+        [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
 
 
     }
@@ -25,6 +39,7 @@ Shader "STE/Terrain" {
             #pragma fragment frag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS_CASCADE
+            #pragma multi_compile _ _PROBE_VOLUMES_L1
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
             #pragma multi_compile _ _SHADOWS_SOFT
@@ -34,7 +49,7 @@ Shader "STE/Terrain" {
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"            
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/CustomLighting.hlsl"
+            #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/Lighting.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
                 sampler2D _MainTex;
@@ -48,6 +63,10 @@ Shader "STE/Terrain" {
                 float4 _RockColor;
                 float4 _ShadowColor;
 
+                float _LedgeTopThickness;
+                float _LedgeBottomThickness;
+                float _RockTextureTiling;
+
                 sampler2D _Ground1;
                 sampler2D _Ground2;
                 sampler2D _Ground3;
@@ -55,6 +74,16 @@ Shader "STE/Terrain" {
 
                 sampler3D _RockNoise;
                 float4 _RockNoise_ST;
+
+                int _SpotLightBands;
+                int _PointLightBands;
+
+                float _CloudScale;
+                float _CloudSpeedX;
+                float _CloudSpeedY;
+                float _CloudDensity;
+                float _CloudBrightness;
+                float _CloudVerticalSpeed;
             CBUFFER_END
 
             struct Attributes
@@ -75,6 +104,7 @@ Shader "STE/Terrain" {
                 float3 normalWS     : TEXCOORD1;
                 float3 worldViewDir : TEXCOORD2;
                 float2 uv_MainTex   : TEXCOORD3;
+                float2 uv_LightMap  : TEXCOORD4;
                 float4 color        : COLOR;
             };            
 
@@ -92,7 +122,7 @@ Shader "STE/Terrain" {
 
                 OUT.uv_MainTex = IN.uv_MainTex;
                 OUT.color = IN.COLOR;
-
+                OUT.uv_LightMap = unity_LightmapST.xy + unity_LightmapST.zw;
 
                 return OUT;
             }
@@ -147,36 +177,18 @@ Shader "STE/Terrain" {
                 return a * b;
             }
 
-            float ShadowAtten(float3 WorldPos, float4 shadowMask)
-            {
-		        #if defined(_MAIN_LIGHT_SHADOWS_SCREEN) && !defined(_SURFACE_TYPE_TRANSPARENT)
-		        float4 shadowCoord = ComputeScreenPos(TransformWorldToHClip(WorldPos));
-		        #else
-		        float4 shadowCoord = TransformWorldToShadowCoord(WorldPos);
-		        #endif
-		        return MainLightShadow(shadowCoord, WorldPos, shadowMask, _MainLightOcclusionProbes);
-            }
-
-            
-            float toonRamp(float lighting, int shades, float brightness, float minDarkness){
-                float clampedLighting = lighting * shades;
-                float plusBrightness = ceil(clampedLighting + brightness);
-                float ramp = saturate( plusBrightness / shades);
-
-                return lerp(minDarkness, 1.0, ramp);    
-            }
 
             float4 frag(Varyings IN) : SV_Target
             {
                 Light mainLight = GetMainLight();
-                float rockNoise = tex3D(_RockNoise,IN.positionWS.xyz).r;
+                float rockNoise = tex3D(_RockNoise,IN.positionWS.xyz * _RockTextureTiling).r;
                 float4 rockColor = _RockColor * rockNoise;
-                float4 vertColor = step(rockNoise, IN.color);
+                float4 vertColor = step(rockNoise * .5, IN.color);
 
                 float bottomLedge = 0.0;
                 float topLedge = 0.0;
 
-                GetLedgeValue(IN.uv_MainTex, 0.5, 0.5, rockNoise, topLedge, bottomLedge);
+                GetLedgeValue(IN.uv_MainTex, _LedgeTopThickness, _LedgeBottomThickness, rockNoise, topLedge, bottomLedge);
 
                 float sumEdge = topLedge + bottomLedge;
 
@@ -190,42 +202,25 @@ Shader "STE/Terrain" {
                 float4 layer3 = TerrainLayer(IN.positionWS.xyz,IN.normalWS.xyz,layer2,_Ground3,vertColor.b,1);
                 float4 layer4 = TerrainLayer(IN.positionWS.xyz,IN.normalWS.xyz,layer3,_Ground4,vertColor.a,1);
 
-
-                OUTPUT_LIGHTMAP_UV(lightmapUV, unity_LightmapST, lightmapUV);
-                float4 Shadowmask = SAMPLE_SHADOWMASK(lightmapUV);
-
-                float Cookie = SampleMainLightCookie(IN.positionWS);
-                float atten = ShadowAtten(IN.positionWS,Shadowmask);
-                float nDotL = dot(mainLight.direction, IN.normalWS) + _DiffuseOffset;
-
                 float4 color = lerp(layer4,rockColor,mask) * _Diffuse;
 
-                float shadow = toonRamp(Cookie * min(nDotL,atten),4,0.25,0);
+                CloudNoiseSettings cloudSettings;
+                cloudSettings.Scale = _CloudScale;
+                cloudSettings.Speed = float2(_CloudSpeedX, _CloudSpeedY);
+                cloudSettings.Coverage = _CloudDensity;
+                cloudSettings.Brightness = _CloudBrightness;
+                cloudSettings.VerticalSpeed = _CloudVerticalSpeed;
 
-                float4 shadowColor = lerp(color,_ShadowColor,_ShadowColor.a);
-
-
-                float3 additionalLightDiffuse = float3(0,0,0);
-                float3 additionalLightSpecular = float3(0,0,0);
-
-
-                AdditionalLightsToon_float(
-                    float3(1,1,1),
-                    0.1,
-                    IN.positionWS,
+                float4 final = ToonLighting(
+                    color,
+                    _ShadowColor,
                     IN.normalWS,
-                    IN.worldViewDir,
-                    float4(1.0,1.0,1.0,1.0),
-                    4,
-                    4,
-                    additionalLightDiffuse,
-                    additionalLightSpecular
+                    _DiffuseOffset,
+                    IN.positionWS,
+                    _PointLightBands,
+                    _SpotLightBands,
+                    cloudSettings
                 );
-                float3 ambient = float3(1,1,1);
-                AmbientSampleSH_float(IN.normalWS, ambient);
-                float4 final = lerp(shadowColor,color,shadow) * float4(mainLight.color.rgb + additionalLightDiffuse,1.0);
-                final *= float4(ambient,1.0);
-
 
                 return final;
             }
