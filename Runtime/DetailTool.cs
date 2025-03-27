@@ -9,6 +9,7 @@ enum Mode
     Remove
 }
 
+
 [System.Serializable]
 public class DetailTool : TerrainTool
 {
@@ -25,7 +26,6 @@ public class DetailTool : TerrainTool
 
     Mode mode = Mode.Add;
 
-    float detailDensity = 1f;
     float hoveredCellHeight = 0;
     float brushSize = 2;
     float normalOffset = 0.5f;
@@ -81,8 +81,17 @@ public class DetailTool : TerrainTool
     //Load data from EditorPrefs on selection
     public override void ToolSelected()
     {
-        detailDensity = EditorPrefs.GetFloat("DetailDensity", 1);
         normalOffset = EditorPrefs.GetFloat("NormalOffset", 0.5f);
+        brushSize = EditorPrefs.GetFloat("BrushSize", 2);
+        size = EditorPrefs.GetFloat("Size", 1);
+    }
+
+    public override void ToolDeselected()
+    {
+        EditorPrefs.SetFloat("BrushSize", brushSize);
+        EditorPrefs.SetFloat("NormalOffset", normalOffset);
+        EditorPrefs.SetFloat("Size", size);
+
     }
 
     GUIContent detailDensityLabel = new GUIContent("Detail Density", "Density(amount) of the added details");
@@ -91,7 +100,6 @@ public class DetailTool : TerrainTool
     {
         detailMesh = serializedT.FindProperty("detailMesh");
         detailMaterial = serializedT.FindProperty("detailMaterial");
-        detailDensity = EditorGUILayout.FloatField(detailDensityLabel, detailDensity);
         normalOffset = EditorGUILayout.FloatField("Normal Offset", normalOffset);
         size = EditorGUILayout.FloatField("Size", size);
         detailMesh.objectReferenceValue = EditorGUILayout.ObjectField("Detail Mesh", detailMesh.objectReferenceValue, typeof(Mesh), false);
@@ -105,7 +113,6 @@ public class DetailTool : TerrainTool
         GUILayout.EndHorizontal();
 
         //Save editor values
-        EditorPrefs.SetFloat("DetailDensity", detailDensity);
         EditorPrefs.SetFloat("NormalOffset", normalOffset);
         EditorPrefs.SetFloat("Size", size);
 

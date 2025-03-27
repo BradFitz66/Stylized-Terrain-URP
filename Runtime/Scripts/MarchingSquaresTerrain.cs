@@ -9,6 +9,8 @@ using NativeTrees;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using NUnit.Framework;
+using System.Threading.Tasks;
 
 [System.Serializable]
 public struct DetailObject
@@ -36,15 +38,18 @@ public enum NoiseMixMode
 public struct NoiseSettings
 {
     public float scale;
-    public float frequency;
-    public float amplitude;
-    public float lacunarity;
-    public float persistence;
+    public double frequency;
+    public double amplitude;
+    public double lacunarity;
+    public double persistence;
     public int octaves;
     public Vector2 offset;
     public int seed;
     public NoiseMixMode mixMode;
 }
+
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
 [ExecuteInEditMode]
 public class MarchingSquaresTerrain : MonoBehaviour
 {
@@ -117,9 +122,32 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public int detailCount => detailChunks.Values.SelectMany(x => x).Count();
     public DetailObject[] detailData => detailChunks.Values.SelectMany(x => x).ToArray();
 
+    Vector3[] vertexCache;
+    Vector3[] normalCache;
+    int[] triangleCache;
+
     private void Awake()
     {
+        InitializeBuffers();
+        UpdateDetailBuffer();
+    }
 
+    private void OnValidate()
+    {
+        UpdateClouds();
+
+    }
+
+    private void OnEnable()
+    {
+        InitializeBuffers();
+        UpdateDetailBuffer();
+    }
+
+    void InitializeBuffers()
+    {
+        argsBuffer?.Release();
+        detailBuffer?.Release();
         args = new uint[5] { detailMesh.GetIndexCount(0), (uint)detailCount, detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
         if (argsBuffer == null)
         {
@@ -135,20 +163,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             detailBuffer = new ComputeBuffer(1000000, Marshal.SizeOf(typeof(DetailObject))); //Preallocate 1million details
             detailBuffer.SetData(detailData);
         }
-        UpdateDetailBuffer();
-    }
 
-    private void OnValidate()
-    {
-        UpdateClouds();
-
-    }
-
-    void InitializeBuffers()
-    {
         mpb = new MaterialPropertyBlock();
-        argsBuffer?.Release();
-        detailBuffer?.Release();
         argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
         args[1] = (uint)detailCount;
         argsBuffer.SetData(args);
@@ -156,6 +172,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     public void UpdateDetailBuffer()
     {
+        
         args[1] = (uint)detailCount;
         argsBuffer.SetData(args);
 
@@ -165,6 +182,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             return;
         if (detailBuffer == null)
             detailBuffer = new ComputeBuffer(1000000, Marshal.SizeOf(typeof(DetailObject)));
+
+        print(detailData + " " + detailCount);
 
         //Append new data to the buffer
         detailBuffer.SetData(
@@ -185,68 +204,33 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (detailBuffer != null)
             detailBuffer.Release();
     }
-
-    //Biased random function
-    public float Random(float min, float max, float bias)
+    public void AddDetail(float size, float normalOffset, float3 detailPos, MarchingSquaresChunk chunk)
     {
-        float r = UnityEngine.Random.Range(min, max);
-        return Mathf.Pow(r, bias);
-    }
-
-    Vector3 Barycentric(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
-    {
-        Vector3 v0 = b - a, v1 = c - a, v2 = p - a;
-        float d00 = Vector3.Dot(v0, v0);
-        float d01 = Vector3.Dot(v0, v1);
-        float d11 = Vector3.Dot(v1, v1);
-        float d20 = Vector3.Dot(v2, v0);
-        float d21 = Vector3.Dot(v2, v1);
-        float denom = d00 * d11 - d01 * d01;
-        float v = (d11 * d20 - d01 * d21) / denom;
-        float w = (d00 * d21 - d01 * d20) / denom;
-        float u = 1.0f - v - w;
-
-        return new Vector3(u, v, w);
-    }
-
-    public void AddDetail(float size,float normalOffset,float3 detailPos,MarchingSquaresChunk chunk)
-    {
-        [BurstCompile]
-        bool checkDistance(DetailObject d)
-        {
-            float3 pos = new float3(
-                d.trs.c3.x,
-                d.trs.c3.y,
-                d.trs.c3.z
-            );
-            return math.distance(pos, detailPos) < currentDetailDensity;
-        }
 
         //Return if the detail is out of bounds
         if (!totalTerrainSize.Contains(detailPos))
             return;
 
         var chunks = GetChunksAtWorldPosition(detailPos);
-        if(chunks.Count == 0)
+        if (chunks.Count == 0)
             return;
 
         MarchingSquaresChunk c = chunks[0];
-        
-        if (!detailChunks.ContainsKey(c.chunkPosition))
-        {
-            detailChunks.Add(c.chunkPosition, new List<DetailObject>());
-        }
 
         bool canPlace = true;
-        foreach (var d in detailChunks[c.chunkPosition])
+        foreach (var otherChunk in chunks)
         {
-            if(checkDistance(d))
+            if (!detailChunks.ContainsKey(otherChunk.chunkPosition))
+                detailChunks.Add(otherChunk.chunkPosition, new List<DetailObject>());
+            Parallel.ForEach(detailChunks[otherChunk.chunkPosition], (d) =>
             {
-                canPlace = false;
-                break;
-            }
+                if (math.distance(new float3(d.trs.c3.x, detailPos.y, d.trs.c3.z), detailPos) < currentDetailDensity)
+                {
+                    print(currentDetailDensity);
+                    canPlace = false;
+                }
+            });
         }
-
 
         if (!canPlace)
             return;
@@ -283,11 +267,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         MarchingSquaresChunk chunk = newChunk.AddComponent<MarchingSquaresChunk>();
         newChunk.AddComponent<MeshFilter>();
-        MeshRenderer mr = newChunk.AddComponent<MeshRenderer>();
         newChunk.AddComponent<MeshCollider>();
+        newChunk.AddComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.TwoSided;
         newChunk.layer = gameObject.layer;
-        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.TwoSided;
-        newChunk.isStatic = true;
 
         AddChunk(chunkCoords, chunk);
 
@@ -382,6 +364,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
 
         chunk.RegenerateMesh();
+        MergeChunks();
     }
 
     public void GenerateTerrain()
@@ -391,10 +374,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
             chunk.Value.GenerateHeightmap(
                 noiseSettings
             );
-            UpdateDetailHeight(chunk.Value);
         }
 
-
+        MergeChunks();
     }
     public void RemoveChunk(Vector2Int coords)
     {
@@ -420,6 +402,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             detailChunks.Remove(coords);
             UpdateDetailBuffer();
         }
+
+        MergeChunks();
     }
 
     void AddChunk(Vector2Int coords, MarchingSquaresChunk chunk, bool regenMesh = true)
@@ -448,6 +432,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Vector2Int chunkPos = chunk.chunkPosition;
         if (!detailChunks.ContainsKey(chunkPos))
             return;
+
         int count = detailChunks[chunkPos].Count;
 
         var results = new NativeArray<RaycastHit>(count, Allocator.TempJob);
@@ -461,7 +446,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
          * and set the height of the detail object to the hit point.If the hit point is null, 
          * we don't add the detail object to the new list.
          */
-
         for (int i = 0; i < count; i++)
         {
             DetailObject d = detailChunks[chunkPos][i];
@@ -477,6 +461,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             );
         }
 
+
         JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1,default(JobHandle));
 
         handle.Complete();
@@ -484,54 +469,45 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         int index = 0;
 
+        
 
         ProfilerMarker pm = new ProfilerMarker("UpdateDetailHeight.ResultLoop");
         pm.Begin();
         foreach (var hit in results)
         {
-            if (hit.collider != null)
+            if (chunk == null || chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
             {
-                if (hit.transform.GetComponent<MeshFilter>() == null)
-                    continue;
-
-                if (chunk == null)
-                    continue;
-
-                if (chunk.vertCache == null || chunk.normCache == null || chunk.triCache == null)
-                    continue;
-
-                DetailObject d = detailChunks[chunkPos][index];
-                Vector3 pos = hit.point;
-                //Get lossyScale from float4x4
-
-                Vector3 size = new Vector3(
-                    math.length(d.trs.c0),
-                    math.length(d.trs.c1),
-                    math.length(d.trs.c2)
-                );
-                Matrix4x4 trs = Matrix4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
-
-                Vector3 n0 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 0]];
-                Vector3 n1 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 1]];
-                Vector3 n2 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 2]];
-
-                Vector3 baryCenter = hit.barycentricCoordinate;
-
-                Vector3 interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
-                interpolatedNormal = interpolatedNormal.normalized;
-
-                Transform hitTransform = hit.collider.transform;
-                interpolatedNormal = hitTransform.TransformDirection(interpolatedNormal);
-
-                newDetailList.Add(new DetailObject()
-                {
-                    trs = trs,
-                    normal = interpolatedNormal,
-                    normalOffset = d.normalOffset                
-                });
-
+                continue;
             }
-            index++;
+
+            DetailObject d = detailChunks[chunkPos][index];
+            Vector3 pos = hit.point;
+            //Get lossyScale from float4x4
+            float3 size = new Vector3(
+                math.length(d.trs.c0),
+                math.length(d.trs.c1),
+                math.length(d.trs.c2)
+            );
+            float3 n0 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 0]];
+            float3 n1 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 1]];
+            float3 n2 = chunk.normCache[chunk.triCache[hit.triangleIndex * 3 + 2]];
+
+            float3 baryCenter = hit.barycentricCoordinate;
+
+            float3 interpolatedNormal = math.normalize(n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z);
+
+            float4x4 trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+            interpolatedNormal = hit.collider.transform.TransformDirection(interpolatedNormal);
+
+            newDetailList.Add(new DetailObject()
+            {
+                trs = trs,
+                normal = interpolatedNormal,
+                normalOffset = d.normalOffset
+            });
+
+            
+        index++;
         }
         pm.End();
 
@@ -607,9 +583,44 @@ public class MarchingSquaresTerrain : MonoBehaviour
             {
                 chunk.Value.RegenerateMesh();
             }
-
             UpdateDetailHeight(chunk.Value);
         }
+
+        MergeChunks();
+    }
+
+    void MergeChunks()
+    {
+        MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
+        CombineInstance[] combine = new CombineInstance[meshFilters.Length];
+
+
+        int i = 0;
+        while (i < meshFilters.Length)
+        {
+
+
+            if (meshFilters[i].gameObject != gameObject)
+            {
+                combine[i].mesh = meshFilters[i].sharedMesh;
+                combine[i].transform = meshFilters[i].transform.localToWorldMatrix;
+                meshFilters[i].gameObject.GetComponent<MeshRenderer>().enabled = false;
+            }
+
+            i++;
+        }
+
+        Mesh mesh = new Mesh();
+        mesh.CombineMeshes(combine);
+        mesh.RecalculateNormals(45);
+
+        transform.GetComponent<MeshFilter>().sharedMesh = mesh;
+        transform.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
+
+        vertexCache = mesh.vertices;
+        normalCache = mesh.normals;
+        triangleCache = mesh.triangles;
+
     }
 
 

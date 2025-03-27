@@ -1,10 +1,12 @@
-﻿using UnityEditor;
+﻿using System;
+using UnityEditor;
 using UnityEngine;
 
 [System.Serializable]
 public class TerrainTool : ScriptableObject
 {
     public MarchingSquaresTerrain t;
+
     public SerializedObject serializedT;
     public virtual void Update() { }
 

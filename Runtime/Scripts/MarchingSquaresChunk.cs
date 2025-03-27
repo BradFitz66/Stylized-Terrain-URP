@@ -997,12 +997,10 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         MeshRenderer r = gameObject.GetComponent<MeshRenderer>();
         MeshFilter mf = gameObject.GetComponent<MeshFilter>();
-
+        MeshCollider mc = gameObject.GetComponent<MeshCollider>();
         r.material = terrain.terrainMaterial;
         mf.sharedMesh = mesh;
-
-        MeshCollider mc = gameObject.GetComponent<MeshCollider>();
-        mc.sharedMesh = mf.sharedMesh;
+        mc.sharedMesh = mesh;
 
         IsDirty = false;
     }
@@ -1102,10 +1100,7 @@ public class MarchingSquaresChunk : MonoBehaviour
                 float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
 
                 float noiseValue = (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
-                //Quantize noiseValue based on terrain.heightBanding
-                if (noiseValue != 0) 
-                    noiseValue = Mathf.Round(noiseValue * terrain.heightBanding) / terrain.heightBanding;
-
+                print(noiseValue);
                 switch (ns.mixMode)
                 {
                     case NoiseMixMode.Add:
