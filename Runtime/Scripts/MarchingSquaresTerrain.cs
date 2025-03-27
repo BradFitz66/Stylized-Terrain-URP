@@ -565,7 +565,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             float4 mousePos = new float4(mousePosition.x, 0, mousePosition.z,0);
 
             var inRange = from d in detailChunks[chunk.chunkPosition].AsParallel()
-                          where math.distance(d.trs.c3, mousePos) > brushSize / 2
+                          where math.distance(new float4(d.trs.c3.x,mousePos.y,d.trs.c3.z,0), mousePos) > brushSize / 2
                           select d;
 
             detailChunks[chunk.chunkPosition] = inRange.ToList();
