@@ -1,6 +1,6 @@
 {
 	"name": "com.ducktor.stylizedterrain",
-	"version": "0.0.4",
+	"version": "0.0.6",
 	"displayName": "Stylized Terrain Editor",
 	"description": "A custom terrain solution for stylized terrain similar to the work of t3ssel8r on youtube",
 	"unity": "6000.0",
