@@ -200,7 +200,7 @@ Material:
     - _Grass_Color: {r: 1, g: 1, b: 1, a: 1}
     - _RockColor: {r: 0.3962264, g: 0.28519896, b: 0.15512636, a: 1}
     - _Rock_Color: {r: 0.42452827, g: 0.31598252, b: 0.19824666, a: 1}
-    - _ShadowColor: {r: 0, g: 0, b: 0, a: 0.5019608}
+    - _ShadowColor: {r: 0.03529412, g: 0.047058824, b: 0.25490198, a: 0.74509805}
     - _Shadow_Color: {r: 0, g: 0, b: 0, a: 0.5019608}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []

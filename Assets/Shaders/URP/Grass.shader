@@ -15,17 +15,17 @@ Shader "Instanced/Grass" {
 
         _QueueOffset ("Queue Offset", Float) = 0
 
-        [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
-        [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
-        [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
-        [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
-        [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
-        [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
+        // [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
+        // [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
+        // [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
+        // [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
+        // [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
+        // [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
 
 
     }
     SubShader {
-        Tags { "RenderType" = "Transparent" "RenderPipeline" = "UniversalRenderPipeline" "Queue" = "Transparent"}
+        Tags { "RenderType" = "Opaque" "RenderPipeline" = "UniversalRenderPipeline"}
         Cull Off
         Pass {
             HLSLPROGRAM
@@ -256,7 +256,7 @@ Shader "Instanced/Grass" {
                   cloudSettings
                 );
                 
-                if(albedo.a < 0.1)
+                if (albedo.a < 0.1)
                 {
                     discard;
                 }

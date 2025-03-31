@@ -665,7 +665,7 @@ struct GenerateChunkJob : IJobParallelFor
             );
         }
     }
-    
+
     void AddInnerCorner(bool lowerFloor = true, bool fullUpperFloor = true, bool flatten = false, bool bdFloor = false, bool cdFloor = false)
     {
 
@@ -742,7 +742,7 @@ struct GenerateChunkJob : IJobParallelFor
             );
         }
     }
-    
+
     void AddDiagonalFloor(float bY, float cY, bool aCliff, bool dCliff)
     {
 
@@ -824,12 +824,12 @@ struct GenerateChunkJob : IJobParallelFor
         if (diagMidpoint)
         {
             var adColor = math.lerp(
-                colorMap[cellCoords.y*terrainSize.x + cellCoords.x],
+                colorMap[cellCoords.y * terrainSize.x + cellCoords.x],
                 colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x + 1],
                 .5f
             );
             var bcColor = math.lerp(
-                colorMap[cellCoords.y * terrainSize.x + cellCoords.x +1],
+                colorMap[cellCoords.y * terrainSize.x + cellCoords.x + 1],
                 colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x],
                 .5f
             );
@@ -854,7 +854,7 @@ struct GenerateChunkJob : IJobParallelFor
         {
 
             var abColor = math.lerp(
-                colorMap[cellCoords.y*terrainSize.x+cellCoords.x],
+                colorMap[cellCoords.y * terrainSize.x + cellCoords.x],
                 colorMap[cellCoords.y * terrainSize.x + cellCoords.x + 1],
                 x
             );
@@ -866,7 +866,7 @@ struct GenerateChunkJob : IJobParallelFor
             color = math.lerp(abColor, cdColor, z);
         }
 
-        colors.Add(new float4(color.x,color.y,color.z,color.w));
+        colors.Add(new float4(color.x, color.y, color.z, color.w));
         float3 vert = new float3(
             (cellCoords.x + x) * cellSize.x,
             y,
@@ -888,7 +888,7 @@ struct GenerateChunkJob : IJobParallelFor
         triangles.Add(vertexCount);
 
         float3 normal = -math.normalize(math.cross(v1 - v0, v2 - v0));
-        
+
         normals.Add(normal);
         normals.Add(normal);
         normals.Add(normal);
@@ -901,7 +901,7 @@ struct GenerateChunkJob : IJobParallelFor
 
     bool IsLower(float a, float b)
     {
-        return a - b < - mergeThreshold;
+        return a - b < -mergeThreshold;
     }
 
     bool IsMerged(float a, float b)
@@ -930,13 +930,13 @@ public class MarchingSquaresChunk : MonoBehaviour
     //Mesh data
     NativeArray<float3> vertices;
     NativeArray<float4> colors;
-    NativeArray<int>    triangles;
+    NativeArray<int> triangles;
     NativeArray<float2> uvs;
     NativeArray<float3> normals;
 
     public List<float3> vertCache;
     public List<float3> normCache;
-    public List<int>    triCache;
+    public List<int> triCache;
 
     public MarchingSquaresTerrain terrain;
     public Vector2Int chunkPosition;
@@ -963,11 +963,11 @@ public class MarchingSquaresChunk : MonoBehaviour
     void InitializeColorMap()
     {
         colorMap = new float4[terrain.dimensions.z * terrain.dimensions.x];
-        for(int z = 0; z < terrain.dimensions.z; z++)
+        for (int z = 0; z < terrain.dimensions.z; z++)
         {
             for (int x = 0; x < terrain.dimensions.x; x++)
             {
-                colorMap[GetIndex(x,z)] = new float4(1, 0, 0, 0);
+                colorMap[GetIndex(x, z)] = new float4(1, 0, 0, 0);
             }
         }
     }
@@ -995,12 +995,8 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         GenerateTerrainCells();
 
-        MeshRenderer r = gameObject.GetComponent<MeshRenderer>();
         MeshFilter mf = gameObject.GetComponent<MeshFilter>();
-        MeshCollider mc = gameObject.GetComponent<MeshCollider>();
-        r.material = terrain.terrainMaterial;
         mf.sharedMesh = mesh;
-        mc.sharedMesh = mesh;
 
         IsDirty = false;
     }
@@ -1012,44 +1008,44 @@ public class MarchingSquaresChunk : MonoBehaviour
     public void GenerateTerrainCells()
     {
 
-        
+
 
         GenerateChunkJob job = new GenerateChunkJob()
         {
             //Data
-            heightMap    = new NativeArray<float>(heightMap, Allocator.TempJob),
-            colorMap     = new NativeArray<float4>(colorMap, Allocator.TempJob),
+            heightMap = new NativeArray<float>(heightMap, Allocator.TempJob),
+            colorMap = new NativeArray<float4>(colorMap, Allocator.TempJob),
 
             //Mesh data
-            vertices     = new NativeList<float3>(0,Allocator.Persistent),
-            colors       = new NativeList<float4>(0, Allocator.Persistent),
-            uvs          = new NativeList<float2>(0, Allocator.Persistent),
-            triangles    = new NativeList<int>(0, Allocator.Persistent),
-            normals      = new NativeList<float3>(0, Allocator.Persistent),
+            vertices = new NativeList<float3>(0, Allocator.Persistent),
+            colors = new NativeList<float4>(0, Allocator.Persistent),
+            uvs = new NativeList<float2>(0, Allocator.Persistent),
+            triangles = new NativeList<int>(0, Allocator.Persistent),
+            normals = new NativeList<float3>(0, Allocator.Persistent),
 
-            cellEdges    = new NativeArray<bool>(new bool[4]{ false, false, false, false},Allocator.Persistent),
+            cellEdges = new NativeArray<bool>(new bool[4] { false, false, false, false }, Allocator.Persistent),
             pointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
-            
+
             //Config
             higherPolyFloors = true,
-            cellSize         = terrain.cellSize,
-            terrainSize      = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
-            mergeThreshold   = terrain.mergeThreshold,
+            cellSize = terrain.cellSize,
+            terrainSize = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
+            mergeThreshold = terrain.mergeThreshold,
         };
 
-        
-        
+
+
         int totalLoop = (terrain.dimensions.x) * (terrain.dimensions.z);
 
         JobHandle handle = job.Schedule(totalLoop, terrain.dimensions.x * terrain.dimensions.z);
 
         handle.Complete();
 
-        vertices  = job.vertices.AsArray();
-        colors    = job.colors.AsArray();
+        vertices = job.vertices.AsArray();
+        colors = job.colors.AsArray();
         triangles = job.triangles.AsArray();
-        uvs       = job.uvs.AsArray();
-        normals   = job.normals.AsArray();
+        uvs = job.uvs.AsArray();
+        normals = job.normals.AsArray();
 
         //memcpy vertices into vertCache
         vertCache = new List<float3>(vertices.Length);
@@ -1100,7 +1096,6 @@ public class MarchingSquaresChunk : MonoBehaviour
                 float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
 
                 float noiseValue = (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
-                print(noiseValue);
                 switch (ns.mixMode)
                 {
                     case NoiseMixMode.Add:
@@ -1118,14 +1113,14 @@ public class MarchingSquaresChunk : MonoBehaviour
                 }
             }
         }
-        RegenerateMesh();
+        IsDirty = true;
     }
     public bool inBounds(int x, int z)
     {
         return x >= 0 && x < terrain.dimensions.x && z >= 0 && z < terrain.dimensions.z;
     }
 
-    public void DrawHeight(int x, int z, float y,bool setHeight = false)
+    public void DrawHeight(int x, int z, float y, bool setHeight = false)
     {
         //Within bounds?
         if (!inBounds(z, x))

@@ -21,12 +21,12 @@ Shader "STE/Terrain" {
 
         _RockNoise("Rock Noise", 3D) = "white" {}
 
-        [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
-        [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
-        [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
-        [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
-        [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
-        [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
+        // [HideInInspector]_CloudScale ("Cloud Scale", Float) = 1.0
+        // [HideInInspector]_CloudSpeedX ("Cloud Speed X", Float) = 1.0
+        // [HideInInspector]_CloudSpeedY ("Cloud Speed Y", Float) = 1.0
+        // [HideInInspector]_CloudDensity ("Cloud Density", Float) = 1.0
+        // [HideInInspector]_CloudBrightness ("Cloud Gradient", Float) = 1.0
+        // [HideInInspector]_CloudVerticalSpeed ("Cloud Gradient", Float) = 1.0
 
 
     }
@@ -233,6 +233,8 @@ Shader "STE/Terrain" {
  
             ZWrite On
             ColorMask 0
+            ZTest LEqual
+
  
             HLSLPROGRAM
             // Required to compile gles 2.0 with standard srp library
@@ -289,5 +291,4 @@ Shader "STE/Terrain" {
             ENDHLSL
         }
     }
-
 }

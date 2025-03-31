@@ -26,10 +26,10 @@ public class DetailTool : TerrainTool
 
     Mode mode = Mode.Add;
 
-    float hoveredCellHeight = 0;
-    float brushSize = 2;
-    float normalOffset = 0.5f;
-    float size = 1;
+    public float hoveredCellHeight = 0;
+    public float brushSize = 2;
+    public float normalOffset = 0.5f;
+    public float size = 1;
 
     //cell world position, chunkPos
     Dictionary<Vector3, Vector2Int> selectedCells = new Dictionary<Vector3, Vector2Int>();
@@ -61,7 +61,7 @@ public class DetailTool : TerrainTool
     {
         if (button != 0)
             return;
-        
+
         mouseDown = true;
     }
     public override void OnMouseDrag(Vector2 delta)
@@ -95,7 +95,7 @@ public class DetailTool : TerrainTool
     }
 
     GUIContent detailDensityLabel = new GUIContent("Detail Density", "Density(amount) of the added details");
-    
+
     public override void OnInspectorGUI()
     {
         detailMesh = serializedT.FindProperty("detailMesh");
@@ -146,12 +146,12 @@ public class DetailTool : TerrainTool
             Mathf.FloorToInt(mousePosition.x / totalTerrainSize.x),
             Mathf.FloorToInt(mousePosition.z / totalTerrainSize.z)
         );
-        
-       
+
+
 
         if (mouseDown)
         {
-            if(mode == Mode.Add)
+            if (mode == Mode.Add)
             {
                 for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
                 {

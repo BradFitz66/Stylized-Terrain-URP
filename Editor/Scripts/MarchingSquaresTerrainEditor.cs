@@ -21,11 +21,8 @@ public class MarchingSquaresTerrainEditor : Editor
     SerializedProperty noiseSettings;
     SerializedProperty heightBanding;
     SerializedProperty detailDensity;
-    SerializedProperty cloudSize;
-    SerializedProperty cloudDensity;
-    SerializedProperty cloudSpeed;
-    SerializedProperty cloudBrightness;
-    SerializedProperty cloudVerticalSpeed;
+    SerializedProperty cloudSettings;
+    SerializedProperty instancingData;
 
     SerializedProperty lastTool;
     SerializedProperty currentTool;
@@ -33,7 +30,7 @@ public class MarchingSquaresTerrainEditor : Editor
     TerrainTool lastToolInstance;
     TerrainTool currentToolInstance;
 
-
+    bool showGenerateGrassSettings = false;
     public void OnEnable()
     {
         t = (MarchingSquaresTerrain)target;
@@ -48,12 +45,9 @@ public class MarchingSquaresTerrainEditor : Editor
         noiseSettings = serializedObject.FindProperty("noiseSettings");
         heightBanding = serializedObject.FindProperty("heightBanding");
         detailDensity = serializedObject.FindProperty("detailDensity");
-        cloudSize = serializedObject.FindProperty("cloudScale");
-        cloudDensity = serializedObject.FindProperty("cloudDensity");
-        cloudSpeed = serializedObject.FindProperty("cloudSpeed");
-        cloudBrightness = serializedObject.FindProperty("cloudBrightness");
-        cloudVerticalSpeed = serializedObject.FindProperty("cloudVerticalSpeed");
-        
+        cloudSettings = serializedObject.FindProperty("cloudSettings");
+        instancingData = serializedObject.FindProperty("instancingData");
+
 
 
         if (tools.arraySize != 4)
@@ -91,38 +85,37 @@ public class MarchingSquaresTerrainEditor : Editor
     public override void OnInspectorGUI()
     {
         t = (MarchingSquaresTerrain)target;
-        //Create toolbar for the terrain tools
-        //Draw terrain dimensions fields
-        serializedObject.Update();
+
         EditorGUILayout.PropertyField(terrainDimensions);
         EditorGUILayout.PropertyField(cellSize);
         EditorGUILayout.PropertyField(mergeThreshold);
         EditorGUILayout.PropertyField(terrainMaterial);
         EditorGUILayout.PropertyField(noiseSettings);
+        EditorGUILayout.PropertyField(cloudSettings);
+        EditorGUILayout.PropertyField(instancingData);
+
+        showGenerateGrassSettings = EditorGUILayout.Foldout(showGenerateGrassSettings, new GUIContent("Grass settings"));
+        if (showGenerateGrassSettings)
+        {
+            if (GUILayout.Button("Generate grass"))
+            {
+                DetailTool detailTool = tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
+                t.GenerateGrass(detailTool.size, detailTool.normalOffset);
+            }
+        }
         EditorGUILayout.PropertyField(heightBanding);
         EditorGUILayout.PropertyField(detailDensity);
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Cloud settings", EditorStyles.boldLabel);
 
-        EditorGUI.BeginChangeCheck();
 
-        EditorGUILayout.PropertyField(cloudSize);
-        EditorGUILayout.PropertyField(cloudDensity);
-        EditorGUILayout.PropertyField(cloudSpeed);
-        EditorGUILayout.PropertyField(cloudBrightness);
-        EditorGUILayout.PropertyField(cloudVerticalSpeed);
-
-        if (EditorGUI.EndChangeCheck())
-        {
-            //t.UpdateClouds();
-        }
 
         if (GUILayout.Button("Generate terrain"))
         {
             t.GenerateTerrain();
         }
-        if(GUILayout.Button("Clear details"))
+        if (GUILayout.Button("Clear details"))
         {
             t.ClearDetails();
         }
@@ -164,6 +157,7 @@ public class MarchingSquaresTerrainEditor : Editor
         }
 
         serializedObject.ApplyModifiedProperties();
+        //serializedObject.Update();
     }
 
 

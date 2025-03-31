@@ -1,20 +1,25 @@
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ShaderGraphFunctions.hlsl"
+//#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ShaderGraphFunctions.hlsl"
 #include "Packages/com.ducktor.stylizedterrain/Assets/Shaders/URP/CustomLighting.hlsl"
+
 float ShadowAtten(float3 WorldPos, float4 shadowMask)
 {
+#ifdef SHADERGRAPH_PREVIEW
+    return 1.0;
+#else
 #if defined(_MAIN_LIGHT_SHADOWS_SCREEN) && !defined(_SURFACE_TYPE_TRANSPARENT)
     float4 shadowCoord = ComputeScreenPos(TransformWorldToHClip(WorldPos));
 #else
     float4 shadowCoord = TransformWorldToShadowCoord(WorldPos);
 #endif
     return MainLightShadow(shadowCoord, WorldPos, shadowMask, _MainLightOcclusionProbes);
+#endif
 }
 
 
 struct CloudNoiseSettings {
-	float Scale;
-	float2 Speed;
-	float Coverage;
+    float Scale;
+    float2 Speed;
+    float Coverage;
     float VerticalSpeed;
     float Brightness;
 };
@@ -148,7 +153,20 @@ float Cloud(float2 UV, float Scale, float VerticalSpeed, float2 Step, float Cove
     return Coverage + 0.5 * n;
 }
 
-float4 ToonLighting(float4 Albedo, float4 ShadowColor, float3 Normal, float DiffuseOffset, float3 WorldPos, uint PointLightBands,uint SpotLightBands, CloudNoiseSettings CloudSettings) {
+void Cloud_float(float2 UV, float Scale, float VerticalSpeed, float2 Step, float Coverage, float Time, out float Cloud)
+{
+    // FBX Calculations (Lacunarity, Octaves, Amplitude)
+    float n = snoise(float3(UV * Scale, Time * VerticalSpeed));
+    n += 0.5 * snoise(float3((UV * 2.0 - Step) * Scale, Time * VerticalSpeed));
+    n += 0.25 * snoise(float3((UV * 4.0 - 2.0 * Step) * Scale, Time * VerticalSpeed));
+    n += 0.125 * snoise(float3((UV * 8.0 - 3.0 * Step) * Scale, Time * VerticalSpeed));
+    n += 0.0625 * snoise(float3((UV * 16.0 - 4.0 * Step) * Scale, Time * VerticalSpeed));
+    n += 0.03125 * snoise(float3((UV * 32.0 - 5.0 * Step) * Scale, Time * VerticalSpeed));
+
+    Cloud = Coverage + 0.5 * n;
+}
+
+float4 ToonLighting(float4 Albedo, float4 ShadowColor, float3 Normal, float DiffuseOffset, float3 WorldPos, uint PointLightBands, uint SpotLightBands, CloudNoiseSettings CloudSettings) {
     Light mainLight = GetMainLight();
     OUTPUT_LIGHTMAP_UV(lightmapUV, unity_LightmapST, lightmapUV);
     float4 Shadowmask = SAMPLE_SHADOWMASK(lightmapUV);
@@ -158,26 +176,26 @@ float4 ToonLighting(float4 Albedo, float4 ShadowColor, float3 Normal, float Diff
     AmbientSampleSH_float(Normal, ambient);
 
     float Clouds = Cloud(
-        ShadowProjection(WorldPos, mainLight.direction) + CloudSettings.Speed * _Time.x,
+        ShadowProjection(WorldPos, mainLight.direction) + CloudSettings.Speed * _Time.y,
         CloudSettings.Scale,
         CloudSettings.VerticalSpeed,
         float2(0, 0),
         CloudSettings.Coverage,
-        _Time.y
+        0
     ) + CloudSettings.Brightness;
     float atten = ShadowAtten(WorldPos, Shadowmask);
     float nDotL = dot(mainLight.direction, Normal) + DiffuseOffset;
 
-    float shadow = toonRamp(min(nDotL, min(Clouds,atten)), 4, 0, 0);
+    float shadow = toonRamp(min(nDotL, min(Clouds, atten)), 6, 0, 0);
 
-    float4 diffuseLighting = Albedo * float4(mainLight.color * ambient,1);
+    float4 diffuseLighting = Albedo * float4(mainLight.color * ambient, 1);
 
-    float4 shadowColor = lerp(diffuseLighting, ShadowColor, ShadowColor.a);
+    float4 shadowColor = lerp(diffuseLighting, ShadowColor * float4(ambient.rgb, 1), ShadowColor.a);
 
     float3 additionalLightDiffuse = float3(0, 0, 0);
     float3 additionalLightSpecular = float3(0, 0, 0);
 
-    
+
 
     AdditionalLightsToon_float(
         float3(1, 1, 1),
@@ -191,11 +209,11 @@ float4 ToonLighting(float4 Albedo, float4 ShadowColor, float3 Normal, float Diff
         additionalLightDiffuse,
         additionalLightSpecular
     );
-    
+
 
     additionalLightDiffuse *= Albedo;
 
 
-	return lerp(shadowColor, diffuseLighting, shadow) + float4(additionalLightDiffuse, 1);
+    return lerp(shadowColor, diffuseLighting, shadow) + float4(additionalLightDiffuse, 1);
 
 }
