@@ -3,11 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Kitbashery.MeshCombiner;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Serialization;
+
+// ReSharper disable All
 
 
 [System.Serializable]
@@ -16,12 +20,6 @@ public struct DetailObject
     public float4x4 trs;
     public float3 normal;
     public float normalOffset;
-}
-
-public struct TerrainLayer
-{
-    public Texture2D cliffTexture;
-    public Texture2D groundTexture;
 }
 
 public enum NoiseMixMode
@@ -47,25 +45,19 @@ public struct NoiseSettings
 }
 
 [Serializable]
-public struct CloudSettings
+public struct CloudSettings : IEquatable<CloudSettings>
 {
     public float density;
     public Vector3 speed;
     public float scale;
     public float brightness;
-
-    //Operator for checking equality
-    public static bool operator ==(CloudSettings a, CloudSettings b)
+    
+    
+    public bool Equals(CloudSettings other)
     {
-        return a.GetHashCode() == b.GetHashCode();
+        return other.GetHashCode() == GetHashCode();
     }
 
-    public static bool operator !=(CloudSettings a, CloudSettings b)
-    {
-        return a.GetHashCode() != b.GetHashCode();
-    }
-
-    //Hash function
     public override int GetHashCode()
     {
         return density.GetHashCode() ^ speed.GetHashCode() ^ scale.GetHashCode() ^ brightness.GetHashCode();
@@ -81,33 +73,35 @@ public struct CloudSettings
 public class MarchingSquaresTerrain : MonoBehaviour
 {
 
-    ComputeBuffer detailBuffer;
-    ComputeBuffer argsBuffer;
-    ComputeBuffer voteBuffer;
-    ComputeBuffer scanBuffer;
-    ComputeBuffer groupSumArrayBuffer;
-    ComputeBuffer scannedGroupSumBuffer;
-    ComputeBuffer resultBuffer;
+    private ComputeShader _shader;
+    
+    private ComputeBuffer _detailBuffer;
+    private ComputeBuffer _argsBuffer;
+    private ComputeBuffer _voteBuffer;
+    private ComputeBuffer _scanBuffer;
+    private ComputeBuffer _groupSumArrayBuffer;
+    private ComputeBuffer _scannedGroupSumBuffer;
+    private ComputeBuffer _resultBuffer;
+    private int _numThreadGroups;
+    private int _numVoteThreadGroups;
+    private int _numGroupScanThreadGroups;
+    private Camera _camera;
+    private bool _useCulling;
+    private uint[] _args = new uint[] { 0, 0, 0, 0, 0 };
 
-    private int numThreadGroups;
-    private int numVoteThreadGroups;
-    private int numGroupScanThreadGroups;
+    private int[] _triCache;
+    private Vector3[] _normCache;
+    
+    private CloudSettings _lastCloudSettings;
 
-
-    //List<DetailObject> allDetail;
-
-
-
-    uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
-    MaterialPropertyBlock mpb;
-
-
+    private MaterialPropertyBlock _mpb;
+    
     public Vector3Int dimensions = new Vector3Int(10, 10, 10);
-    public Bounds totalTerrainSize
+    public Bounds TotalTerrainSize
     {
         get
         {
-            Bounds cB = new Bounds();
+            var cB = new Bounds();
             if (GetComponent<MeshFilter>().sharedMesh != null) {
                 cB = GetComponent<MeshFilter>().sharedMesh.bounds;
             }
@@ -131,8 +125,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     public Texture2D[] groundTextures = new Texture2D[4];
     public NoiseSettings noiseSettings;
+    public Texture2D heightMap;
 
-    public int selectedTool = 0;
+    public int selectedTool;
     public TerrainTool[] tools;
     public TerrainTool currentTool;
     public TerrainTool lastTool;
@@ -145,17 +140,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public float detailDensity = 0.1f; //Minimum distance between details
     public float currentDetailDensity = 0.1f;
 
-    Camera camera;
-
-    bool useCulling = false;
-
-    public string GUID = System.Guid.NewGuid().ToString();
-
-    ComputeShader shader;
+    [FormerlySerializedAs("GUID")] public string guid;
 
 
-    int[] triCache;
-    Vector3[] normCache;
+
 
     public CloudSettings cloudSettings = new CloudSettings()
     {
@@ -168,12 +156,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
     private void Awake()
     {
         CreateOrLoadInstanceData();
-        useCulling = !(Application.isEditor && !Application.isPlaying);
+        _useCulling = !(Application.isEditor && !Application.isPlaying);
         UpdateDetailBuffer();
-    }
-
-    private void OnValidate()
-    {
     }
 
     private void OnEnable()
@@ -181,64 +165,64 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         CreateOrLoadInstanceData();
 
-        useCulling = !(Application.isEditor && !Application.isPlaying);
-        shader = Resources.Load<ComputeShader>("Shaders/Culling");
+        _useCulling = !(Application.isEditor && !Application.isPlaying);
+        _shader = Resources.Load<ComputeShader>("Shaders/Culling");
 
         UpdateDetailBuffer();
 
-        if (resultBuffer == null || voteBuffer == null || scanBuffer == null || groupSumArrayBuffer == null || scannedGroupSumBuffer == null)
-        {
-            voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-            scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-            groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-            scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-            resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        }
+        if (_resultBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null ||
+            _scannedGroupSumBuffer == null)
+            return;
+        
+        _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
     }
 
     //Cleanup
     private void OnDestroy()
     {
-        if (argsBuffer != null)
-            argsBuffer.Release();
-        if (detailBuffer != null)
-            detailBuffer.Release();
+        if (_argsBuffer != null)
+            _argsBuffer.Release();
+        if (_detailBuffer != null)
+            _detailBuffer.Release();
     }
 
     public void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.blue;
-        Gizmos.DrawWireCube(totalTerrainSize.center, totalTerrainSize.size);
+        Gizmos.DrawWireCube(TotalTerrainSize.center, TotalTerrainSize.size);
     }
 
-    CloudSettings lastCloudSettings;
     private void Update()
     {
-        if (argsBuffer == null || args == null || detailBuffer == null)
+        if (_argsBuffer == null || _args == null || _detailBuffer == null)
         {
             InitializeBuffers();
             return;
         }
 
-        if (camera == null)
+        if (_camera == null)
         {
             if (Application.isPlaying)
-                camera = Camera.main;
+                _camera = Camera.main;
         }
 
-        if (lastCloudSettings != cloudSettings)
+        if (!_lastCloudSettings.Equals(cloudSettings))
         {
-            lastCloudSettings = cloudSettings;
+            _lastCloudSettings = cloudSettings;
             UpdateClouds();
         }
 
-        if (camera != null && useCulling)
-            Dispatch(transform.position, camera.transform.position, camera.projectionMatrix * camera.worldToCameraMatrix);
+        if (_camera != null && _useCulling)
+            Dispatch(transform.position, _camera.transform.position, _camera.projectionMatrix * _camera.worldToCameraMatrix);
 
         Graphics.DrawMeshInstancedIndirect(
             detailMesh, 0, detailMaterial,
             new Bounds(Vector3.zero, new Vector3(10000, 10000, 10000)),
-            bufferWithArgs: argsBuffer, argsOffset: 0, properties: mpb
+            bufferWithArgs: _argsBuffer, argsOffset: 0, properties: _mpb
         );
     }
 #endregion
@@ -253,8 +237,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
         ClearDetails();
         NativeList<float2> results = new NativeList<float2>(Allocator.TempJob);
-        float2 bottomLeft = new float2(totalTerrainSize.min.x, totalTerrainSize.min.z);
-        float2 topRight = new float2(totalTerrainSize.max.x, totalTerrainSize.max.z);
+        float2 bottomLeft = new float2(TotalTerrainSize.min.x, TotalTerrainSize.min.z);
+        float2 topRight = new float2(TotalTerrainSize.max.x, TotalTerrainSize.max.z);
         float minimumDistance = detailDensity;
         PoissonJob job = new PoissonJob(
             results,
@@ -262,18 +246,18 @@ public class MarchingSquaresTerrain : MonoBehaviour
             topRight,
             minimumDistance
         );
-        JobHandle handle = job.Schedule();
+        var handle = job.Schedule();
         handle.Complete();
 
-        foreach (float2 pos in results)
+        foreach (var pos in results)
         {
-            var chunks = GetChunksAtWorldPosition(new Vector3(pos.x, 0, pos.y));
-            foreach (var chunk in chunks)
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(new Vector3(pos.x, 0, pos.y));
+            foreach (var chunk in chunksAtWorldPosition)
             {
                 if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
                     instancingData.detailChunks.Add(chunk.chunkPosition, new List<DetailObject>());
-                Matrix4x4 trs = Matrix4x4.TRS(new Vector3(pos.x, 0, pos.y), Quaternion.identity, Vector3.one * size);
-                DetailObject detailObject = new DetailObject()
+                var trs = Matrix4x4.TRS(new Vector3(pos.x, 0, pos.y), Quaternion.identity, Vector3.one * size);
+                var detailObject = new DetailObject()
                 {
                     trs = trs,
                     normal = Vector3.up,
@@ -289,7 +273,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
 
 #if UNITY_EDITOR
-        UnityEditor.EditorUtility.SetDirty(instancingData);
+        EditorUtility.SetDirty(instancingData);
 #endif
 
         results.Dispose();
@@ -303,37 +287,35 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
-        argsBuffer?.Release();
-        detailBuffer?.Release();
-        args = new uint[5] { detailMesh.GetIndexCount(0), (uint)instancingData.GetDetailCount(), detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
+        _argsBuffer?.Release();
+        _detailBuffer?.Release();
+        _args = new uint[5] { detailMesh.GetIndexCount(0), (uint)instancingData.GetDetailCount(), detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
 
-        if (mpb == null)
-        {
-            mpb = new MaterialPropertyBlock();//
-        }
-        if (detailBuffer == null || voteBuffer == null || scanBuffer == null || groupSumArrayBuffer == null || scannedGroupSumBuffer == null || resultBuffer == null)
+        _mpb ??= new MaterialPropertyBlock();
+        
+        if (_detailBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null || _scannedGroupSumBuffer == null || _resultBuffer == null)
         {
             var data = instancingData.GetDetailData();
-            detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>()); //Preallocate 1million details
-            voteBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            scanBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            groupSumArrayBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            scannedGroupSumBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            resultBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>(), ComputeBufferType.Append);
-            detailBuffer.SetData(
+            _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>()); //Preallocate 1million details
+            _voteBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            _scanBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            _groupSumArrayBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            _scannedGroupSumBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            _resultBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>(), ComputeBufferType.Append);
+            _detailBuffer.SetData(
                 data,
                 0,
                 0,
                 data.Length
             );
 
-            mpb?.SetBuffer("_TerrainDetail", useCulling ? resultBuffer : detailBuffer);
+            _mpb?.SetBuffer("_TerrainDetail", _useCulling ? _resultBuffer : _detailBuffer);
         }
 
-        mpb = new MaterialPropertyBlock();
+        _mpb = new MaterialPropertyBlock();
 
-        argsBuffer = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
-        argsBuffer.SetData(args);
+        _argsBuffer = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
+        _argsBuffer.SetData(_args);
     }
 
     public void UpdateDetailBuffer()
@@ -345,51 +327,51 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
         var data = instancingData.GetDetailData();
 
-        if (argsBuffer == null)
+        if (_argsBuffer == null)
             InitializeBuffers();
 
-        args[1] = (uint)data.Length;
-        argsBuffer.SetData(args);
+        _args[1] = (uint)data.Length;
+        _argsBuffer.SetData(_args);
 
-        if (mpb == null)
-            mpb = new MaterialPropertyBlock();
+        if (_mpb == null)
+            _mpb = new MaterialPropertyBlock();
 
         if (data.Length == 0)
             return;
 
         print("Updating detail buffer");
 
-        if (detailBuffer == null)
-            detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf(typeof(DetailObject)));
+        if (_detailBuffer == null)
+            _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf(typeof(DetailObject)));
 
-        numThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
-        if (numThreadGroups > 128)
+        _numThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
+        if (_numThreadGroups > 128)
         {
             int powerOfTwo = 128;
-            while (powerOfTwo < numThreadGroups)
+            while (powerOfTwo < _numThreadGroups)
                 powerOfTwo *= 2;
 
-            numThreadGroups = powerOfTwo;
+            _numThreadGroups = powerOfTwo;
         }
         else
         {
-            while (128 % numThreadGroups != 0)
-                numThreadGroups++;
+            while (128 % _numThreadGroups != 0)
+                _numThreadGroups++;
         }
 
-        numVoteThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
-        numGroupScanThreadGroups = Mathf.CeilToInt(data.Length / 1024.0f);
+        _numVoteThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
+        _numGroupScanThreadGroups = Mathf.CeilToInt(data.Length / 1024.0f);
 
         print("Updating detail buffer");
 
-        detailBuffer.SetData(
+        _detailBuffer.SetData(
             data,
             0,
             0,
             data.Length
         );
 
-        mpb?.SetBuffer("_TerrainDetail", useCulling ? resultBuffer : detailBuffer);
+        _mpb?.SetBuffer("_TerrainDetail", _useCulling ? _resultBuffer : _detailBuffer);
     }
     public void AddDetail(float size, float normalOffset, float3 detailPos, MarchingSquaresChunk chunk, bool distanceCheck = true)
     {
@@ -400,19 +382,19 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
 
         //Return if the detail is out of bounds
-        if (!totalTerrainSize.Contains(detailPos))
+        if (!TotalTerrainSize.Contains(detailPos))
         {
             return;
         }
 
-        var chunks = GetChunksAtWorldPosition(detailPos);
-        if (chunks.Count == 0)
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(detailPos);
+        if (chunksAtWorldPosition.Count == 0)
             return;
 
-        MarchingSquaresChunk c = chunks[0];
+        MarchingSquaresChunk c = chunksAtWorldPosition[0];
 
         bool canPlace = true;
-        foreach (var otherChunk in chunks)
+        foreach (var otherChunk in chunksAtWorldPosition)
         {
             if (!instancingData.detailChunks.ContainsKey(otherChunk.chunkPosition))
                 instancingData.detailChunks.Add(otherChunk.chunkPosition, new List<DetailObject>());
@@ -455,7 +437,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         instancingData.detailChunks[c.chunkPosition].Add(detailObject);
 
 #if UNITY_EDITOR
-        UnityEditor.EditorUtility.SetDirty(instancingData);
+        EditorUtility.SetDirty(instancingData);
 #endif
 
         UpdateDetailHeight(c);
@@ -501,12 +483,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
 
 
-        JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1, default(JobHandle));
+        var handle = RaycastCommand.ScheduleBatch(commands, results, 1, default(JobHandle));
 
         handle.Complete();
 
 
-        int index = 0;
+        var index = 0;
 
 
 
@@ -517,10 +499,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 index++;
                 continue;
             }
-            if (normCache == null || triCache == null)
+            if (_normCache == null || _triCache == null)
             {
-                normCache = GetComponent<MeshFilter>().sharedMesh.normals;
-                triCache = GetComponent<MeshFilter>().sharedMesh.triangles;
+                _normCache = GetComponent<MeshFilter>().sharedMesh.normals;
+                _triCache = GetComponent<MeshFilter>().sharedMesh.triangles;
             }
 
             DetailObject d = instancingData.detailChunks[chunkPos][index];
@@ -532,29 +514,29 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 math.length(d.trs.c2)
             );
 
-            int triIdx1 = hit.triangleIndex * 3;
-            int triIdx2 = hit.triangleIndex * 3 + 1;
-            int triIdx3 = hit.triangleIndex * 3 + 2;
-            if (triIdx1 < 0 || triIdx2 < 0 || triIdx3 < 0 || triIdx1 >= triCache.Length || triIdx2 >= triCache.Length || triIdx3 >= triCache.Length)
+            var triIdx1 = hit.triangleIndex * 3;
+            var triIdx2 = hit.triangleIndex * 3 + 1;
+            var triIdx3 = hit.triangleIndex * 3 + 2;
+            if (triIdx1 < 0 || triIdx2 < 0 || triIdx3 < 0 || triIdx1 >= _triCache.Length || triIdx2 >= _triCache.Length || triIdx3 >= _triCache.Length)
             {
                 index++;
                 continue;
             }
-            int tri1 = triCache[triIdx1];
-            int tri2 = triCache[triIdx2];
-            int tri3 = triCache[triIdx3];
+            int tri1 = _triCache[triIdx1];
+            int tri2 = _triCache[triIdx2];
+            int tri3 = _triCache[triIdx3];
 
 
-            Vector3 n0 = normCache[tri1];
-            Vector3 n1 = normCache[tri2];
-            Vector3 n2 = normCache[tri3];
+            Vector3 n0 = _normCache[tri1];
+            Vector3 n1 = _normCache[tri2];
+            Vector3 n2 = _normCache[tri3];
 
-            Vector3 baryCenter = hit.barycentricCoordinate;
-            Vector3 interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
+            var baryCenter = hit.barycentricCoordinate;
+            var interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
 
             interpolatedNormal = interpolatedNormal.normalized;
             interpolatedNormal = hit.transform.TransformDirection(interpolatedNormal);
-            float4x4 trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+            var trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
 
             newDetailList.Add(new DetailObject()
             {
@@ -573,7 +555,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         instancingData.detailChunks[chunkPos] = newDetailList;
 #if UNITY_EDITOR
-        UnityEditor.EditorUtility.SetDirty(instancingData);
+        EditorUtility.SetDirty(instancingData);
 #endif
 
         UpdateDetailBuffer();
@@ -603,6 +585,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #endif
         UpdateDetailBuffer();
     }
+    private string _GroupSumArrayInID  = "_GroupSumArrayIn";
+    private string _GroupSumArrayOutID = "_GroupSumArrayOut";
+    private string _GrassDataBufferID = "_GrassDataBuffer";
+    private string _voteBufferID = "_VoteBuffer";
+    private string _scanBufferID = "_ScanBuffer";
+    private string _argsBufferID = "_ArgsBuffer";
+    private string _matrixVPID = "_MatrixVP";
+    private string _cameraPositionID = "_CameraPosition";
+    private string _distanceID = "_Distance";
+    private string _objectPositionID = "_ObjectPosition";
     void Dispatch(Vector3 position, Vector3 cameraPos, Matrix4x4 VP)
     {
         if (instancingData == null)
@@ -610,42 +602,43 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
-        args[1] = 0;
-        argsBuffer.SetData(args);
+        _args[1] = 0;
+        _argsBuffer.SetData(_args);
 
-        if (shader == null)
-            shader = Resources.Load<ComputeShader>("Shaders/Culling");
+        if (_shader == null)
+            _shader = Resources.Load<ComputeShader>("Shaders/Culling");
 
-        if (numGroupScanThreadGroups == 0 || numThreadGroups == 0 || numVoteThreadGroups == 0)
+        if (_numGroupScanThreadGroups == 0 || _numThreadGroups == 0 || _numVoteThreadGroups == 0)
             return;
 
-        shader.SetVector("_ObjectPosition", position);
-        shader.SetMatrix("MATRIX_VP", VP);
-        shader.SetBuffer(0, "_GrassDataBuffer", detailBuffer);
-        shader.SetBuffer(0, "_VoteBuffer", voteBuffer);
-        shader.SetVector("_CameraPosition", cameraPos);
-        shader.SetFloat("_Distance", 5000);
-        shader.Dispatch(0, numVoteThreadGroups, 1, 1);
+        _shader.SetVector("_ObjectPosition", position);
+        _shader.SetMatrix("_MatrixVP", VP);
+        _shader.SetBuffer(0, "_GrassDataBuffer", _detailBuffer);
+        _shader.SetBuffer(0, "_VoteBuffer", _voteBuffer);
+        _shader.SetVector("_CameraPosition", cameraPos);
+        _shader.SetFloat("_Distance", 5000);
+        _shader.Dispatch(0, _numVoteThreadGroups, 1, 1);
 
-        shader.SetBuffer(1, "_VoteBuffer", voteBuffer);
-        shader.SetBuffer(1, "_ScanBuffer", scanBuffer);
-        shader.SetBuffer(1, "_GroupSumArray", groupSumArrayBuffer);
-        shader.Dispatch(1, numThreadGroups, 1, 1);
+        _shader.SetBuffer(1, "_VoteBuffer", _voteBuffer);
+        _shader.SetBuffer(1, "_ScanBuffer", _scanBuffer);
+        _shader.SetBuffer(1, "_GroupSumArray", _groupSumArrayBuffer);
+        _shader.Dispatch(1, _numThreadGroups, 1, 1);
 
         ////////Scan groups
-        shader.SetInt("_NumOfGroups", numThreadGroups);
-        shader.SetBuffer(2, "_GroupSumArrayIn", groupSumArrayBuffer);
-        shader.SetBuffer(2, "_GroupSumArrayOut", scannedGroupSumBuffer);
-        shader.Dispatch(2, numGroupScanThreadGroups, 1, 1);
+        _shader.SetInt("_NumOfGroups", _numThreadGroups);
+        _shader.SetBuffer(2, "_GroupSumArrayIn", _groupSumArrayBuffer);
+        _shader.SetBuffer(2, "_GroupSumArrayOut", _scannedGroupSumBuffer);
+        _shader.Dispatch(2, _numGroupScanThreadGroups, 1, 1);
 
+        
         //////////Compact
-        shader.SetBuffer(3, "_GrassDataBuffer", detailBuffer);
-        shader.SetBuffer(3, "_VoteBuffer", voteBuffer);
-        shader.SetBuffer(3, "_ScanBuffer", scanBuffer);
-        shader.SetBuffer(3, "_ArgsBuffer", argsBuffer);
-        shader.SetBuffer(3, "_CulledGrassOutputBuffer", resultBuffer);
-        shader.SetBuffer(3, "_GroupSumArray", scannedGroupSumBuffer);
-        shader.Dispatch(3, numThreadGroups, 1, 1);
+        _shader.SetBuffer(3, "_GrassDataBuffer", _detailBuffer);
+        _shader.SetBuffer(3, "_VoteBuffer", _voteBuffer);
+        _shader.SetBuffer(3, "_ScanBuffer", _scanBuffer);
+        _shader.SetBuffer(3, "_ArgsBuffer", _argsBuffer);
+        _shader.SetBuffer(3, "_CulledGrassOutputBuffer", _resultBuffer);
+        _shader.SetBuffer(3, "_GroupSumArray", _scannedGroupSumBuffer);
+        _shader.Dispatch(3, _numThreadGroups, 1, 1);
     }
 
     internal void RemoveDetail(float brushSize, Vector3 mousePosition)
@@ -655,13 +648,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
-        var chunks = GetChunksAtWorldPosition(mousePosition);
-        foreach (var chunk in chunks)
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(mousePosition);
+        foreach (var chunk  in chunksAtWorldPosition)
         {
             if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
                 continue;
 
-            float4 mousePos = new float4(mousePosition.x, 0, mousePosition.z, 0);
+            var mousePos = new float4(mousePosition.x, 0, mousePosition.z, 0);
 
             var inRange = from d in instancingData.detailChunks[chunk.chunkPosition].AsParallel()
                           where math.distance(new float4(d.trs.c3.x, mousePos.y, d.trs.c3.z, 0), mousePos) > brushSize / 2
@@ -671,22 +664,19 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
 
 #if UNITY_EDITOR
-        UnityEditor.EditorUtility.SetDirty(instancingData);
+        EditorUtility.SetDirty(instancingData);
 #endif
 
         UpdateDetailBuffer();
     }
     #endregion
-
-
-
 #region Chunk Functions
     public void AddNewChunk(int chunkX, int chunkY)
     {
         var chunkCoords = new Vector2Int(chunkX, chunkY);
         var newChunk = new GameObject("Chunk " + chunkCoords);
 
-        MarchingSquaresChunk chunk = newChunk.AddComponent<MarchingSquaresChunk>();
+        var chunk = newChunk.AddComponent<MarchingSquaresChunk>();
         newChunk.AddComponent<MeshFilter>();
         newChunk.layer = gameObject.layer;
 
@@ -695,10 +685,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkLeft = chunks.TryGetValue(new Vector2Int(chunkX - 1, chunkY), out var leftChunk);
         if (chunkLeft)
         {
-            for (int z = 0; z < dimensions.z; z++)
+            for (var z = 0; z < dimensions.z; z++)
             {
-                int idx1 = chunk.GetIndex(z, 0);
-                int idx2 = leftChunk.GetIndex(z, dimensions.x - 1);
+                var idx1 = chunk.GetIndex(z, 0);
+                var idx2 = leftChunk.GetIndex(z, dimensions.x - 1);
                 chunk.heightMap[idx1] = leftChunk.heightMap[idx2];
 
             }
@@ -710,10 +700,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkRight = chunks.TryGetValue(new Vector2Int(chunkX + 1, chunkY), out var rightChunk);
         if (chunkRight)
         {
-            for (int z = 0; z < dimensions.z; z++)
+            for (var z = 0; z < dimensions.z; z++)
             {
-                int idx1 = chunk.GetIndex(z, dimensions.x - 1);
-                int idx2 = rightChunk.GetIndex(z, 0);
+                var idx1 = chunk.GetIndex(z, dimensions.x - 1);
+                var idx2 = rightChunk.GetIndex(z, 0);
                 chunk.heightMap[idx1] = rightChunk.heightMap[idx2];
             }
             rightChunk.neighboringChunks.Add(chunk);
@@ -722,10 +712,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkUp = chunks.TryGetValue(new Vector2Int(chunkX, chunkY + 1), out var upChunk);
         if (chunkUp)
         {
-            for (int x = 0; x < dimensions.x; x++)
+            for (var x = 0; x < dimensions.x; x++)
             {
-                int idx1 = chunk.GetIndex(dimensions.z - 1, x);
-                int idx2 = upChunk.GetIndex(0, x);
+                var idx1 = chunk.GetIndex(dimensions.z - 1, x);
+                var idx2 = upChunk.GetIndex(0, x);
                 chunk.heightMap[idx1] = upChunk.heightMap[idx2];
             }
             upChunk.neighboringChunks.Add(chunk);
@@ -734,10 +724,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkDown = chunks.TryGetValue(new Vector2Int(chunkX, chunkY - 1), out var downChunk);
         if (chunkDown)
         {
-            for (int x = 0; x < dimensions.x; x++)
+            for (var x = 0; x < dimensions.x; x++)
             {
-                int idx1 = chunk.GetIndex(0, x);
-                int idx2 = downChunk.GetIndex(dimensions.z - 1, x);
+                var idx1 = chunk.GetIndex(0, x);
+                var idx2 = downChunk.GetIndex(dimensions.z - 1, x);
                 chunk.heightMap[idx1] = downChunk.heightMap[idx2];
             }
             downChunk.neighboringChunks.Add(chunk);
@@ -746,8 +736,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkUpright = chunks.TryGetValue(new Vector2Int(chunkX + 1, chunkY + 1), out var upRightChunk);
         if (chunkUpright)
         {
-            int idx1 = chunk.GetIndex(0, dimensions.x - 1);
-            int idx2 = upRightChunk.GetIndex(dimensions.z - 1, 0);
+            var idx1 = chunk.GetIndex(0, dimensions.x - 1);
+            var idx2 = upRightChunk.GetIndex(dimensions.z - 1, 0);
             chunk.heightMap[idx1] = upRightChunk.heightMap[idx2];
             upRightChunk.neighboringChunks.Add(chunk);
             chunk.neighboringChunks.Add(upRightChunk);
@@ -755,8 +745,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkUpleft = chunks.TryGetValue(new Vector2Int(chunkX - 1, chunkY + 1), out var upLeftChunk);
         if (chunkUpleft)
         {
-            int idx1 = chunk.GetIndex(dimensions.z - 1, 0);
-            int idx2 = upLeftChunk.GetIndex(0, dimensions.x - 1);
+            var idx1 = chunk.GetIndex(dimensions.z - 1, 0);
+            var idx2 = upLeftChunk.GetIndex(0, dimensions.x - 1);
             chunk.heightMap[idx1] = upLeftChunk.heightMap[idx2];
             upLeftChunk.neighboringChunks.Add(chunk);
             chunk.neighboringChunks.Add(upLeftChunk);
@@ -764,8 +754,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkDownright = chunks.TryGetValue(new Vector2Int(chunkX + 1, chunkY - 1), out var downRightChunk);
         if (chunkDownright)
         {
-            int idx1 = chunk.GetIndex(dimensions.z - 1, dimensions.x - 1);
-            int idx2 = downRightChunk.GetIndex(0, 0);
+            var idx1 = chunk.GetIndex(dimensions.z - 1, dimensions.x - 1);
+            var idx2 = downRightChunk.GetIndex(0, 0);
             chunk.heightMap[idx1] = downRightChunk.heightMap[idx2];
             downRightChunk.neighboringChunks.Add(chunk);
             chunk.neighboringChunks.Add(downRightChunk);
@@ -773,8 +763,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var chunkDownleft = chunks.TryGetValue(new Vector2Int(chunkX - 1, chunkY - 1), out var downLeftChunk);
         if (chunkDownleft)
         {
-            int idx1 = chunk.GetIndex(0, 0);
-            int idx2 = downLeftChunk.GetIndex(dimensions.z - 1, dimensions.x - 1);
+            var idx1 = chunk.GetIndex(0, 0);
+            var idx2 = downLeftChunk.GetIndex(dimensions.z - 1, dimensions.x - 1);
             chunk.heightMap[idx1] = downLeftChunk.heightMap[idx2];
             downLeftChunk.neighboringChunks.Add(chunk);
             chunk.neighboringChunks.Add(downLeftChunk);
@@ -788,12 +778,49 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     public void GenerateTerrain()
     {
-        foreach (var chunk in chunks)
+        if (heightMap == null)
         {
-            chunk.Value.GenerateHeightmap(
-                noiseSettings
-            );
+            foreach (var chunk in chunks)
+            {
+
+                chunk.Value.GenerateHeightmap(
+                    noiseSettings
+                );
+            }
         }
+        else
+        {
+            //Loop over all chunks
+            foreach (var chunk in chunks)
+            {
+                //Loop through chunk's heightmap
+                for (var x = 0; x < dimensions.x; x++)
+                {
+                    for (var z = 0; z < dimensions.z; z++)
+                    {
+                        var idx = chunk.Value.GetIndex(z, x);
+                        
+                        //Convert x and z to world position
+                        var worldPos = new Vector3(
+                            chunk.Value.transform.position.x + x * cellSize.x,
+                            0,
+                            chunk.Value.transform.position.z + z * cellSize.y
+                        );
+                        //Convert world position to heightmap position
+                        var heightMapPos = new Vector2(
+                            Mathf.InverseLerp(TotalTerrainSize.min.x, TotalTerrainSize.max.x, worldPos.x),
+                            Mathf.InverseLerp(TotalTerrainSize.min.z, TotalTerrainSize.max.z, worldPos.z)
+                        );
+                        //Get the height from the heightmap
+                        var height = heightMap.GetPixelBilinear(heightMapPos.x, heightMapPos.y).r;
+                        
+                        chunk.Value.heightMap[idx] = height * noiseSettings.scale;
+                    }
+                }
+                chunk.Value.isDirty = true;
+            }
+        }
+
         UpdateDirtyChunks();
     }
     public void RemoveChunk(Vector2Int coords)
@@ -845,7 +872,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         List<MarchingSquaresChunk> toUpdate = new List<MarchingSquaresChunk>();
         foreach (var chunk in chunks)
         {
-            if (chunk.Value.IsDirty)
+            if (chunk.Value.isDirty)
             {
                 chunk.Value.RegenerateMesh();
                 toUpdate.Add(chunk.Value);
@@ -863,12 +890,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
     }
 
+    // ReSharper disable Unity.PerformanceAnalysis
     void MergeChunks()
     {
         MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
         CombineInstance[] combine = new CombineInstance[meshFilters.Length];
-
-
+        
         int i = 0;
         while (i < meshFilters.Length)
         {
@@ -885,22 +912,21 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         Mesh mesh = new Mesh();
         mesh.CombineMeshes(combine);
-        mesh.RecalculateNormals(45);
 
         transform.GetComponent<MeshFilter>().sharedMesh = mesh;
         transform.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
         transform.GetComponent<MeshCollider>().sharedMesh = mesh;
 
-        triCache = mesh.triangles;
-        normCache = mesh.normals;
+        _triCache = mesh.triangles;
+        _normCache = mesh.normals;
     }
     internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool smooth = false)
     {
         print("Drawing heights");
         foreach (Vector3 worldCell in worldCellPositions)
         {
-            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldCell);
-            foreach (MarchingSquaresChunk chunk in chunks)
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            foreach (var chunk in chunksAtWorldPosition)
             {
                 var localPos = new Vector2Int(
                     Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
@@ -915,22 +941,21 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     internal void DrawColors(List<Vector3> worldCellPositions, Vector3 paintPos, float brushSize, Color color, bool fallOff)
     {
-        AnimationCurve fallOffCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
-        foreach (Vector3 worldCell in worldCellPositions)
+        var fallOffCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
+        foreach (var worldCell in worldCellPositions)
         {
-            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldCell);
-            foreach (MarchingSquaresChunk chunk in chunks)
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            foreach (var chunk in chunksAtWorldPosition)
             {
                 var localPos = new Vector2Int(
                     Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
                     Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
                 );
-                float dist = Vector3.Distance(worldCell, paintPos);
+                var dist = Vector3.Distance(worldCell, paintPos);
                 var t = (brushSize / 2 - dist) / brushSize / 2;
-                Color color1 = color;
-                Color color2 = GetColor(worldCell);
+                var color2 = GetColor(worldCell);
 
-                chunk.DrawColor(localPos.x, localPos.y, fallOff ? Color.Lerp(color1, color2, fallOffCurve.Evaluate(t)) : color1);
+                chunk.DrawColor(localPos.x, localPos.y, fallOff ? Color.Lerp(color, color2, fallOffCurve.Evaluate(t)) : color);
             }
         }
         UpdateDirtyChunks(false);
@@ -940,18 +965,18 @@ public class MarchingSquaresTerrain : MonoBehaviour
     /// <summary>
     /// Get the chunks at a given cell's world position
     /// </summary>
-    /// <param name="worldPosition"></param>
+    /// <param name="worldCellPosition"></param>
     internal List<MarchingSquaresChunk> GetChunksAtWorldPosition(Vector3 worldCellPosition)
     {
-        List<MarchingSquaresChunk> chunksAtPosition = new List<MarchingSquaresChunk>();
+        var chunksAtPosition = new List<MarchingSquaresChunk>();
         //Loop through every chunk and check if the world position is inside the chunk
         foreach (var chunk in chunks)
         {
-            Vector2Int localCellPos = new Vector2Int(
+            var localCellPos = new Vector2Int(
                 Mathf.FloorToInt((worldCellPosition.x - chunk.Value.transform.position.x) / cellSize.x),
                 Mathf.FloorToInt((worldCellPosition.z - chunk.Value.transform.position.z) / cellSize.y)
             );
-            bool inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
+            var inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
             if (inBounds && !chunksAtPosition.Contains(chunk.Value))
             {
                 chunksAtPosition.Add(chunk.Value);
@@ -964,16 +989,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
     internal Color GetColor(Vector3 worldPos)
     {
-        Color color = Color.white;
-        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
-        foreach (MarchingSquaresChunk chunk in chunks)
+        var color = Color.white;
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos);
+        foreach (var chunk in chunksAtWorldPosition)
         {
             //Get the local cell position
-            Vector2Int localCellPos = new Vector2Int(
+            var localCellPos = new Vector2Int(
                 Mathf.FloorToInt((worldPos.x - chunk.transform.position.x) / cellSize.x),
                 Mathf.FloorToInt((worldPos.z - chunk.transform.position.z) / cellSize.y)
             );
-            float4 col = chunk.colorMap[chunk.GetIndex(localCellPos.x, localCellPos.y)];
+            var col = chunk.colorMap[chunk.GetIndex(localCellPos.x, localCellPos.y)];
             color = new Color(
                 col.x,
                 col.y,
@@ -990,14 +1015,14 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         float height = 0;
         //The size of one chunk
-        Vector3 totalChunkSize = new Vector3(
+        var totalChunkSize = new Vector3(
             (dimensions.x - 1) * cellSize.x,
             0,
             (dimensions.z - 1) * cellSize.y
         );
 
-        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
-        foreach (MarchingSquaresChunk chunk in chunks)
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos);
+        foreach (var chunk in chunksAtWorldPosition)
         {
             if (c != null)
             {
@@ -1034,12 +1059,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
     internal void SmoothHeights(List<Vector3> cells)
     {
 
-        Dictionary<Vector3, List<float>> heights = new Dictionary<Vector3, List<float>>();
+        var heights = new Dictionary<Vector3, List<float>>();
 
-        foreach (Vector3 cell in cells)
+        foreach (var cell in cells)
         {
-            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(cell);
-            foreach (MarchingSquaresChunk chunk in chunks)
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell);
+            foreach (var chunk in chunksAtWorldPosition)
             {
                 //Get world position neighbors, this way we can correctly smooth between chunks
                 for (int z = -1; z <= 1; z++)
@@ -1051,13 +1076,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
                             0,
                             cell.z + z * cellSize.y
                         );
-                        foreach (MarchingSquaresChunk nChunk in GetChunksAtWorldPosition(neighbor))
+                        foreach (var nChunk in GetChunksAtWorldPosition(neighbor))
                         {
-                            Vector2Int localCellPos = new Vector2Int(
+                            var localCellPos = new Vector2Int(
                                 Mathf.FloorToInt((neighbor.x - nChunk.transform.position.x) / cellSize.x),
                                 Mathf.FloorToInt((neighbor.z - nChunk.transform.position.z) / cellSize.y)
                             );
-                            float height = nChunk.heightMap[nChunk.GetIndex(localCellPos.y, localCellPos.x)];
+                            var height = nChunk.heightMap[nChunk.GetIndex(localCellPos.y, localCellPos.x)];
                             if (!heights.ContainsKey(cell))
                                 heights.Add(cell, new List<float>());
                             else
@@ -1071,17 +1096,17 @@ public class MarchingSquaresTerrain : MonoBehaviour
         //Average the heights
         foreach (var cell in heights)
         {
-            List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(cell.Key);
-            foreach (MarchingSquaresChunk chunk in chunks)
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell.Key);
+            foreach (var chunk in chunksAtWorldPosition)
             {
                 //Get the local cell position
-                Vector2Int localCellPos = new Vector2Int(
+                var localCellPos = new Vector2Int(
                     Mathf.FloorToInt((cell.Key.x - chunk.transform.position.x) / cellSize.x),
                     Mathf.FloorToInt((cell.Key.z - chunk.transform.position.z) / cellSize.y)
                 );
-                List<float> h = cell.Value;
+                var h = cell.Value;
                 //Smooth heights
-                float curHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+                var curHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
 
                 chunk.DrawHeight(
                     localCellPos.x,
@@ -1096,8 +1121,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
     }
     #endregion
-
-
 #region Misc Functions
     public void UpdateClouds()
     {
@@ -1112,21 +1135,19 @@ public class MarchingSquaresTerrain : MonoBehaviour
     void CreateOrLoadInstanceData()
     {
         if (instancingData == null)
-        {
-            if (Resources.Load<InstancingData>("InstancingData" + GUID) != null)
-            {
-                print("Loading instancing data");
-                instancingData = Resources.Load<InstancingData>("InstancingData" + GUID);
-                UpdateDetailBuffer();
-            }
-#if UNITY_EDITOR
-            else
-            {
-                AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<InstancingData>(), "Assets/Resources/InstancingData" + GUID + ".asset");
-            }
-#endif
             return;
+        if (Resources.Load<InstancingData>("InstancingData" + guid) != null)
+        {
+            print("Loading instancing data");
+            instancingData = Resources.Load<InstancingData>("InstancingData" + guid);
+            UpdateDetailBuffer();
         }
+#if UNITY_EDITOR
+        else
+        {
+            AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<InstancingData>(), "Assets/Resources/InstancingData" + guid + ".asset");
+        }
+#endif
     }
 #endregion
 }

@@ -1,79 +1,81 @@
 using UnityEngine;
 using UnityEditor;
+using UnityEngine.Serialization;
 
 
 [CustomEditor(typeof(MarchingSquaresTerrain))]
 public class MarchingSquaresTerrainEditor : Editor
 {
 
-    [SerializeField]
-    int _currentHandle;
+    [FormerlySerializedAs("_currentHandle")] [SerializeField] private int currentHandle;
 
 
 
     MarchingSquaresTerrain t;
-    SerializedProperty terrainDimensions;
-    SerializedProperty cellSize;
-    SerializedProperty mergeThreshold;
-    SerializedProperty tools;
-    SerializedProperty selectedToolIndex;
-    SerializedProperty terrainMaterial;
-    SerializedProperty noiseSettings;
-    SerializedProperty heightBanding;
-    SerializedProperty detailDensity;
-    SerializedProperty cloudSettings;
-    SerializedProperty instancingData;
+    SerializedProperty _terrainDimensions;
+    private SerializedProperty _cellSize;
+    private SerializedProperty _mergeThreshold;
+    private SerializedProperty _tools;
+    private SerializedProperty _selectedToolIndex;
+    private SerializedProperty _terrainMaterial;
+    private SerializedProperty _noiseSettings;
+    private SerializedProperty _heightBanding;
+    private SerializedProperty _detailDensity;
+    private SerializedProperty _cloudSettings;
+    private SerializedProperty _instancingData;
+    private SerializedProperty _heightMapTexture;
 
-    SerializedProperty lastTool;
-    SerializedProperty currentTool;
+    private SerializedProperty _lastTool;
+    private SerializedProperty _currentTool;
 
-    TerrainTool lastToolInstance;
-    TerrainTool currentToolInstance;
+    private TerrainTool _lastToolInstance;
+    private TerrainTool _currentToolInstance;
 
-    bool showGenerateGrassSettings = false;
+    private bool _showGenerateGrassSettings;
     public void OnEnable()
     {
         t = (MarchingSquaresTerrain)target;
-        terrainDimensions = serializedObject.FindProperty("dimensions");
-        mergeThreshold = serializedObject.FindProperty("mergeThreshold");
-        cellSize = serializedObject.FindProperty("cellSize");
-        tools = serializedObject.FindProperty("tools");
-        selectedToolIndex = serializedObject.FindProperty("selectedTool");
-        terrainMaterial = serializedObject.FindProperty("terrainMaterial");
-        lastTool = serializedObject.FindProperty("lastTool");
-        currentTool = serializedObject.FindProperty("currentTool");
-        noiseSettings = serializedObject.FindProperty("noiseSettings");
-        heightBanding = serializedObject.FindProperty("heightBanding");
-        detailDensity = serializedObject.FindProperty("detailDensity");
-        cloudSettings = serializedObject.FindProperty("cloudSettings");
-        instancingData = serializedObject.FindProperty("instancingData");
+        _terrainDimensions = serializedObject.FindProperty("dimensions");
+        _mergeThreshold = serializedObject.FindProperty("mergeThreshold");
+        _cellSize = serializedObject.FindProperty("cellSize");
+        _tools = serializedObject.FindProperty("tools");
+        _selectedToolIndex = serializedObject.FindProperty("selectedTool");
+        _terrainMaterial = serializedObject.FindProperty("terrainMaterial");
+        _lastTool = serializedObject.FindProperty("lastTool");
+        _currentTool = serializedObject.FindProperty("currentTool");
+        _noiseSettings = serializedObject.FindProperty("noiseSettings");
+        _heightBanding = serializedObject.FindProperty("heightBanding");
+        _detailDensity = serializedObject.FindProperty("detailDensity");
+        _cloudSettings = serializedObject.FindProperty("cloudSettings");
+        _instancingData = serializedObject.FindProperty("instancingData");
+        _heightMapTexture = serializedObject.FindProperty("heightMap");
 
 
 
-        if (tools.arraySize != 4)
+        if (_tools.arraySize != 4)
         {
-            tools.arraySize = 4;
+            _tools.arraySize = 4;
         }
-        if (tools.GetArrayElementAtIndex(0).objectReferenceValue == null)
-            tools.GetArrayElementAtIndex(0).objectReferenceValue = CreateInstance<ChunkBrush>();
+        if (_tools.GetArrayElementAtIndex(0).objectReferenceValue == null)
+            _tools.GetArrayElementAtIndex(0).objectReferenceValue = CreateInstance<ChunkBrush>();
 
-        if (tools.GetArrayElementAtIndex(1).objectReferenceValue == null)
-            tools.GetArrayElementAtIndex(1).objectReferenceValue = CreateInstance<SculptBrush>();
+        if (_tools.GetArrayElementAtIndex(1).objectReferenceValue == null)
+            _tools.GetArrayElementAtIndex(1).objectReferenceValue = CreateInstance<SculptBrush>();
 
-        if (tools.GetArrayElementAtIndex(2).objectReferenceValue == null)
-            tools.GetArrayElementAtIndex(2).objectReferenceValue = CreateInstance<TextureBrush>();
+        if (_tools.GetArrayElementAtIndex(2).objectReferenceValue == null)
+            _tools.GetArrayElementAtIndex(2).objectReferenceValue = CreateInstance<TextureBrush>();
 
-        if (tools.GetArrayElementAtIndex(3).objectReferenceValue == null || tools.GetArrayElementAtIndex(3).objectReferenceValue.GetType() != typeof(DetailTool))
-            tools.GetArrayElementAtIndex(3).objectReferenceValue = CreateInstance<DetailTool>();
+        if (_tools.GetArrayElementAtIndex(3).objectReferenceValue == null || _tools.GetArrayElementAtIndex(3).objectReferenceValue.GetType() != typeof(DetailTool))
+            _tools.GetArrayElementAtIndex(3).objectReferenceValue = CreateInstance<DetailTool>();
 
 
         serializedObject.ApplyModifiedProperties();
-        if (currentTool.objectReferenceValue != null)
+        if (_currentTool.objectReferenceValue != null)
         {
-            currentToolInstance = (TerrainTool)currentTool.objectReferenceValue;
-            currentToolInstance.ToolSelected();
+            _currentToolInstance = (TerrainTool)_currentTool.objectReferenceValue;
+            _currentToolInstance.ToolSelected();
         }
-        if (terrainMaterial.objectReferenceValue == null)
+        if (_terrainMaterial.objectReferenceValue == null)
         {
             //Check current path
             string path = AssetDatabase.GetAssetPath(t);
@@ -85,36 +87,45 @@ public class MarchingSquaresTerrainEditor : Editor
     public override void OnInspectorGUI()
     {
         t = (MarchingSquaresTerrain)target;
+        EditorGUILayout.PropertyField(_instancingData);
 
-        EditorGUILayout.PropertyField(terrainDimensions);
-        EditorGUILayout.PropertyField(cellSize);
-        EditorGUILayout.PropertyField(mergeThreshold);
-        EditorGUILayout.PropertyField(terrainMaterial);
-        EditorGUILayout.PropertyField(noiseSettings);
-        EditorGUILayout.PropertyField(cloudSettings);
-        EditorGUILayout.PropertyField(instancingData);
+        EditorGUILayout.PropertyField(_terrainDimensions);
+        EditorGUILayout.PropertyField(_cellSize);
+        EditorGUILayout.PropertyField(_mergeThreshold);
+        EditorGUILayout.PropertyField(_terrainMaterial);
+        EditorGUILayout.PropertyField(_noiseSettings, true);
+        if (_noiseSettings.isExpanded)
+        {
+            EditorGUI.indentLevel++;
+            EditorGUILayout.LabelField("If heightmap is set, noise settings will be ignored other than scale (scale will be used as a height multiplier)");
+            EditorGUILayout.PropertyField(_heightMapTexture);
+            if (GUILayout.Button("Generate terrain"))
+            {
+                t.GenerateTerrain();
+            }
+            EditorGUI.indentLevel--;
+        }
+        EditorGUILayout.PropertyField(_cloudSettings);
 
-        showGenerateGrassSettings = EditorGUILayout.Foldout(showGenerateGrassSettings, new GUIContent("Grass settings"));
-        if (showGenerateGrassSettings)
+        _showGenerateGrassSettings = EditorGUILayout.Foldout(_showGenerateGrassSettings, new GUIContent("Grass settings"));
+        
+        if (_showGenerateGrassSettings)
         {
             if (GUILayout.Button("Generate grass"))
             {
-                DetailTool detailTool = tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
+                var detailTool = _tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
                 t.GenerateGrass(detailTool.size, detailTool.normalOffset);
             }
+            
         }
-        EditorGUILayout.PropertyField(heightBanding);
-        EditorGUILayout.PropertyField(detailDensity);
+        EditorGUILayout.PropertyField(_heightBanding);
+        EditorGUILayout.PropertyField(_detailDensity);
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Cloud settings", EditorStyles.boldLabel);
 
 
 
-        if (GUILayout.Button("Generate terrain"))
-        {
-            t.GenerateTerrain();
-        }
         if (GUILayout.Button("Clear details"))
         {
             t.ClearDetails();
@@ -133,27 +144,27 @@ public class MarchingSquaresTerrainEditor : Editor
         EditorGUILayout.Space();
 
         //Toolbar 
-        selectedToolIndex.intValue = GUILayout.Toolbar(selectedToolIndex.intValue, new string[] { "Chunk brush", "Sculpt brush", "Texture brush", "Detail brush" });
-        TerrainTool selectingTool = (TerrainTool)tools.GetArrayElementAtIndex(selectedToolIndex.intValue).objectReferenceValue;
+        _selectedToolIndex.intValue = GUILayout.Toolbar(_selectedToolIndex.intValue, new string[] { "Chunk brush", "Sculpt brush", "Texture brush", "Detail brush" });
+        var selectingTool = (TerrainTool)_tools.GetArrayElementAtIndex(_selectedToolIndex.intValue).objectReferenceValue;
         if (selectingTool != null)
         {
             selectingTool.t = t;
-            selectingTool.serializedT = serializedObject;
-            if (currentToolInstance != selectingTool)
+            selectingTool.SerializedT = serializedObject;
+            if (_currentToolInstance != selectingTool)
             {
-                if (currentToolInstance != null && lastToolInstance != currentToolInstance)
+                if (_currentToolInstance != null && _lastToolInstance != _currentToolInstance)
                 {
-                    lastToolInstance = currentToolInstance;
-                    lastToolInstance.ToolDeselected();
+                    _lastToolInstance = _currentToolInstance;
+                    _lastToolInstance.ToolDeselected();
                 }
-                currentToolInstance = selectingTool;
-                currentToolInstance.ToolSelected();
+                _currentToolInstance = selectingTool;
+                _currentToolInstance.ToolSelected();
             }
         }
         EditorGUILayout.Separator();
-        if (currentToolInstance)
+        if (_currentToolInstance)
         {
-            currentToolInstance.OnInspectorGUI();
+            _currentToolInstance.OnInspectorGUI();
         }
 
         serializedObject.ApplyModifiedProperties();
@@ -171,20 +182,20 @@ public class MarchingSquaresTerrainEditor : Editor
 
         Event current = Event.current;
         //Get editor mouse position
-        _currentHandle = (EditorGUIUtility.hotControl != 0) ? EditorGUIUtility.hotControl : _currentHandle;
+        currentHandle = (GUIUtility.hotControl != 0) ? GUIUtility.hotControl : currentHandle;
         Tools.current = Tool.None;
 
-        if (currentToolInstance != null)
+        if (_currentToolInstance != null)
         {
-            currentToolInstance.Update();
-            currentToolInstance.DrawHandles();
-            HandleEvent(currentToolInstance);
+            _currentToolInstance.Update();
+            _currentToolInstance.DrawHandles();
+            HandleEvent(_currentToolInstance);
         }
     }
 
     void HandleEvent(TerrainTool tool)
     {
-        Event current = Event.current;
+        var current = Event.current;
         switch (current.type)
         {
             case EventType.MouseDown:
@@ -202,9 +213,9 @@ public class MarchingSquaresTerrainEditor : Editor
     private void OnDisable()
     {
         Tools.current = Tool.Move;
-        if (currentToolInstance != null)
+        if (_currentToolInstance != null)
         {
-            currentToolInstance.ToolDeselected();
+            _currentToolInstance.ToolDeselected();
         }
     }
 }

@@ -2,52 +2,51 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using UnityEngine.Serialization;
 
 [System.Serializable]
 public class TextureBrush : TerrainTool
 {
-    Vector3 mousePosition;
-    Vector3 totalTerrainSize;
+    private Vector3 _mousePosition;
 
-    [SerializeField]
-    Texture2D[] Layers;
+    [FormerlySerializedAs("Layers")] [SerializeField]
+    private Texture2D[] layers;
 
-    GUIContent[] textureContent;
+    private GUIContent[] _textureContent;
 
-    bool mouseDown = false;
-    bool fallOff = false;
+    private bool _mouseDown;
+    private bool _fallOff;
 
-    int selectedTexture = 0;
+    private int _selectedTexture;
 
-    float brushSize = 2;
+    private float _brushSize = 2;
 
-    List<Vector3> selectedCells = new List<Vector3>();
+    private List<Vector3> _selectedCells;
 
     public Color color = Color.white;
 
-    GUIStyle labelStyle = new GUIStyle();
+    private GUIStyle _labelStyle;
 
-    AnimationCurve falloffCurve = AnimationCurve.Linear(0,1,1,0);
+    private AnimationCurve _falloffCurve = AnimationCurve.Linear(0,1,1,0);
     public override void DrawHandles()
     {
-        falloffCurve = AnimationCurve.Linear(0, 1, 1, 0);
-        labelStyle.normal.textColor = Color.black;
+        _falloffCurve = AnimationCurve.Linear(0, 1, 1, 0);
+        _labelStyle.normal.textColor = Color.black;
         Handles.color = Color.green;
-        List<MarchingSquaresChunk> marchingSquaresChunks;
-        foreach (var cell in selectedCells)
+        foreach (var cell in _selectedCells)
         {
-            marchingSquaresChunks = t.GetChunksAtWorldPosition(cell);
+            var marchingSquaresChunks = t.GetChunksAtWorldPosition(cell);
 
             if (marchingSquaresChunks.Count == 0)
                 break;
 
-            float dist = Vector3.Distance(cell, mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y));
-            float falloff = fallOff 
-                            ? falloffCurve.Evaluate(((brushSize / 2) - dist) / (brushSize / 2)) 
+            var dist = Vector3.Distance(cell, _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y));
+            var falloff = _fallOff 
+                            ? _falloffCurve.Evaluate(((_brushSize / 2) - dist) / (_brushSize / 2)) 
                             : 0;
 
-            MarchingSquaresChunk c = marchingSquaresChunks[0];
-            Vector2Int localCell = new Vector2Int(
+            var c = marchingSquaresChunks[0];
+            var localCell = new Vector2Int(
                 Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
                 Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
             );
@@ -55,16 +54,15 @@ public class TextureBrush : TerrainTool
             Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, Mathf.Lerp(t.cellSize.x / 2, 0, falloff));
         }
 
-        selectedCells.Clear();
+        _selectedCells.Clear();
     }
 
     public override void ToolSelected()
     {
-        if (Layers == null || Layers.Length < 4)
-        {
-            Layers = new Texture2D[4];
-        }
-        textureContent = new GUIContent[4]
+        if (layers == null || layers.Length < 4)
+            layers = new Texture2D[4];
+
+        _textureContent = new GUIContent[4]
         {
             new GUIContent("R"),
             new GUIContent("G"),
@@ -80,10 +78,10 @@ public class TextureBrush : TerrainTool
         {
             foreach (Material mat in chunk.GetComponent<MeshRenderer>().sharedMaterials)
             {
-                mat.SetTexture("_Ground1", Layers[0]);
-                mat.SetTexture("_Ground2", Layers[1]);
-                mat.SetTexture("_Ground3", Layers[2]);
-                mat.SetTexture("_Ground4", Layers[3]);
+                mat.SetTexture("_Ground1", layers[0]);
+                mat.SetTexture("_Ground2", layers[1]);
+                mat.SetTexture("_Ground3", layers[2]);
+                mat.SetTexture("_Ground4", layers[3]);
             }
         }
 
@@ -91,14 +89,6 @@ public class TextureBrush : TerrainTool
 
     public override void ToolDeselected()
     {
-        //Loop over all materials on chunks and set the keyword _OVERLAYVERTEXCOLORS to false
-        foreach (var chunk in t.chunks.Values)
-        {
-            foreach (var mat in chunk.GetComponent<MeshRenderer>().sharedMaterials)
-            {
-                mat.DisableKeyword("_OVERLAYVERTEXCOLORS");
-            }
-        }
 
     }
 
@@ -107,31 +97,26 @@ public class TextureBrush : TerrainTool
     public override void OnMouseDown(int button = 0)
     {
         if (button == 0)
-            mouseDown = true;
+            _mouseDown = true;
     }
     public override void OnMouseUp(int button = 0)
     {
         if (button == 0)
-            mouseDown = false;
+            _mouseDown = false;
     }
     public override void Update()
     {
-        selectedCells.Clear();
-        totalTerrainSize = new Vector3(
-            (t.dimensions.x - 1) * t.cellSize.x,
-            0,
-            (t.dimensions.z - 1) * t.cellSize.y
-        );
+        _selectedCells.Clear();
 
         if (Event.current.type == EventType.ScrollWheel)
         {
-            brushSize += -Event.current.delta.y * 0.1f;
-            brushSize = Mathf.Clamp(brushSize, 1, 100);
+            _brushSize += -Event.current.delta.y * 0.1f;
+            _brushSize = Mathf.Clamp(_brushSize, 1, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
 
-        switch (selectedTexture)
+        switch (_selectedTexture)
         {
             case 0:
                 color = new Color(1, 0, 0, 0);
@@ -151,45 +136,45 @@ public class TextureBrush : TerrainTool
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000, 1 << t.gameObject.layer);
-        mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
+        _mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
 
-        for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+        for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
         {
-            for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+            for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
             {
                 Vector3 p = new Vector3(x, 0, y);
-                Vector3 mouseOffset = mousePosition + p;
+                Vector3 mouseOffset = _mousePosition + p;
                 Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
 
-                bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= brushSize / 2;
+                bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
 
                 List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
 
-                if (!selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
+                if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
                 {
-                    selectedCells.Add(cellWorld);
+                    _selectedCells.Add(cellWorld);
                 }
             }
         }
 
-        if (mouseDown)
+        if (_mouseDown)
         {
-            t.DrawColors(selectedCells, mousePosition, brushSize, color, fallOff);
+            t.DrawColors(_selectedCells, _mousePosition, _brushSize, color, _fallOff);
         }
 
         if(Event.current.type == EventType.KeyDown)
         {
             if (Event.current.keyCode == KeyCode.LeftShift)
             {
-                fallOff = true;
+                _fallOff = true;
             }
         }
         else if (Event.current.type == EventType.KeyUp)
         {
             if (Event.current.keyCode == KeyCode.LeftShift)
             {
-                fallOff = false;
+                _fallOff = false;
             }
         }
     }
@@ -198,7 +183,7 @@ public class TextureBrush : TerrainTool
 
     public override void OnInspectorGUI()
     {
-        EditorGUILayout.LabelField("Brush Size: " + brushSize);
+        EditorGUILayout.LabelField("Brush Size: " + _brushSize);
         EditorGUILayout.LabelField("Hold shift to enable falloff");
 
         EditorGUILayout.Space();
@@ -206,18 +191,18 @@ public class TextureBrush : TerrainTool
         EditorGUILayout.BeginHorizontal();
 
         //Set width of horizontal layout 
-        for (int i = 0; i < Layers.Length; i++)
+        for (int i = 0; i < layers.Length; i++)
         {
             EditorGUILayout.BeginVertical();
-            Texture2D tex = (Texture2D)EditorGUILayout.ObjectField("", Layers[i], typeof(Texture2D), false, GUILayout.MaxWidth(64));
-            if (GUILayout.Toggle(selectedTexture == i, textureContent[i]))
-                selectedTexture = i;
+            Texture2D tex = (Texture2D)EditorGUILayout.ObjectField("", layers[i], typeof(Texture2D), false, GUILayout.MaxWidth(64));
+            if (GUILayout.Toggle(_selectedTexture == i, _textureContent[i]))
+                _selectedTexture = i;
 
             EditorGUILayout.EndVertical();
-            if (tex != Layers[i])
+            if (tex != layers[i])
             {
-                Layers[i] = tex;
-                UpdateMaterialLayers(Layers);
+                layers[i] = tex;
+                UpdateMaterialLayers(layers);
             }
         }
         GUILayout.FlexibleSpace();

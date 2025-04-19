@@ -2,13 +2,9 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-using Unity.Profiling;
 using UnityEngine;
-using System.Linq;
 using Unity.Burst;
-using System.Runtime.CompilerServices;
-using UnityEditor;
-using Unity.Collections.LowLevel.Unsafe;
+using UnityEngine.Serialization;
 
 //Job to generate the mesh for this chunk
 [System.Serializable]
@@ -18,55 +14,54 @@ struct GenerateChunkJob : IJobParallelFor
 
     [ReadOnly]
     [DeallocateOnJobCompletion]
-    public NativeArray<float> heightMap;
+    public NativeArray<float> HeightMap;
 
     public int3 terrainSize;
     public float2 cellSize;
     public float mergeThreshold;
 
-    bool floorMode;
+    private bool _floorMode;
 
     public bool higherPolyFloors;
 
     [NativeDisableParallelForRestriction]
-    public NativeList<float3> vertices;
+    public NativeList<float3> Vertices;
     [NativeDisableParallelForRestriction]
-    public NativeList<float3> normals;
+    public NativeList<float3> Normals;
     [NativeDisableParallelForRestriction]
-    public NativeList<float2> uvs;
+    public NativeList<float2> Uvs;
     [NativeDisableParallelForRestriction]
-    public NativeList<int> triangles;
+    public NativeList<int> Triangles;
     [NativeDisableParallelForRestriction]
-    public NativeList<float4> colors;
+    public NativeList<float4> Colors;
 
 
 
     [NativeDisableParallelForRestriction]
     [DeallocateOnJobCompletion]
-    public NativeArray<bool> cellEdges;
+    public NativeArray<bool> CellEdges;
 
     [NativeDisableParallelForRestriction]
     [DeallocateOnJobCompletion]
-    public NativeArray<float> pointHeights;
+    public NativeArray<float> PointHeights;
 
     [ReadOnly]
     [DeallocateOnJobCompletion]
-    public NativeArray<float4> colorMap;
+    public NativeArray<float4> ColorMap;
 
-    int r;
+    int _r;
 
-    float ay;
-    float by;
-    float cy;
-    float dy;
+    private float _ay;
+    private float _by;
+    private float _cy;
+    private float _dy;
 
-    bool ab;
-    bool ac;
-    bool bd;
-    bool cd;
+    private bool _ab;
+    private bool _ac;
+    private bool _bd;
+    private bool _cd;
 
-    int2 cellCoords;
-
+    private int2 _cellCoords;
     public int GetIndex(int x, int z)
     {
         //Check if within bounds
@@ -85,46 +80,46 @@ struct GenerateChunkJob : IJobParallelFor
 
     public void Execute(int index)
     {
-        cellCoords = GetCoordinates(index);
+        _cellCoords = GetCoordinates(index);
 
-        if (cellCoords.x > terrainSize.x - 2 || cellCoords.y > terrainSize.z - 2)
+        if (_cellCoords.x > terrainSize.x - 2 || _cellCoords.y > terrainSize.z - 2)
         {
             return;
         }
 
 
         int ayIndex = index;
-        int byIndex = GetIndex(cellCoords.y, cellCoords.x + 1);
-        int cyIndex = GetIndex(cellCoords.y + 1, cellCoords.x);
-        int dyIndex = GetIndex(cellCoords.y + 1, cellCoords.x + 1);
+        int byIndex = GetIndex(_cellCoords.y, _cellCoords.x + 1);
+        int cyIndex = GetIndex(_cellCoords.y + 1, _cellCoords.x);
+        int dyIndex = GetIndex(_cellCoords.y + 1, _cellCoords.x + 1);
 
-        r = 0;
+        _r = 0;
 
-        ay = heightMap[ayIndex];
-        by = heightMap[byIndex];
-        cy = heightMap[cyIndex];
-        dy = heightMap[dyIndex];
+        _ay = HeightMap[ayIndex];
+        _by = HeightMap[byIndex];
+        _cy = HeightMap[cyIndex];
+        _dy = HeightMap[dyIndex];
 
-        ab = Mathf.Abs(ay - by) < mergeThreshold; // Top Edge
-        ac = Mathf.Abs(ay - cy) < mergeThreshold; // Bottom Edge
-        bd = Mathf.Abs(by - dy) < mergeThreshold; // Right Edge
-        cd = Mathf.Abs(cy - dy) < mergeThreshold; // Left Edge
+        _ab = Mathf.Abs(_ay - _by) < mergeThreshold; // Top Edge
+        _ac = Mathf.Abs(_ay - _cy) < mergeThreshold; // Bottom Edge
+        _bd = Mathf.Abs(_by - _dy) < mergeThreshold; // Right Edge
+        _cd = Mathf.Abs(_cy - _dy) < mergeThreshold; // Left Edge
 
         //Case 0
-        if (ab && ac && bd && cd)
+        if (_ab && _ac && _bd && _cd)
         {
             AddFullFloor();
             return;
         }
 
-        cellEdges[0] = ab;
-        cellEdges[1] = bd;
-        cellEdges[2] = cd;
-        cellEdges[3] = ac;
-        pointHeights[0] = ay;
-        pointHeights[1] = by;
-        pointHeights[2] = dy;
-        pointHeights[3] = cy;
+        CellEdges[0] = _ab;
+        CellEdges[1] = _bd;
+        CellEdges[2] = _cd;
+        CellEdges[3] = _ac;
+        PointHeights[0] = _ay;
+        PointHeights[1] = _by;
+        PointHeights[2] = _dy;
+        PointHeights[3] = _cy;
 
 
 
@@ -132,59 +127,59 @@ struct GenerateChunkJob : IJobParallelFor
 
         for (int i = 0; i < 4; i++)
         {
-            r = i;
+            _r = i;
 
-            ab = cellEdges[r];
-            bd = cellEdges[(r + 1) % 4];
-            cd = cellEdges[(r + 2) % 4];
-            ac = cellEdges[(r + 3) % 4];
+            _ab = CellEdges[_r];
+            _bd = CellEdges[(_r + 1) % 4];
+            _cd = CellEdges[(_r + 2) % 4];
+            _ac = CellEdges[(_r + 3) % 4];
 
-            ay = pointHeights[r];
-            by = pointHeights[(r + 1) % 4];
-            dy = pointHeights[(r + 2) % 4];
-            cy = pointHeights[(r + 3) % 4];
+            _ay = PointHeights[_r];
+            _by = PointHeights[(_r + 1) % 4];
+            _dy = PointHeights[(_r + 2) % 4];
+            _cy = PointHeights[(_r + 3) % 4];
 
             caseFound = true;
 
             //Case 1
-            if (IsHigher(ay, by) && IsHigher(ay, cy) && bd && cd)
+            if (IsHigher(_ay, _by) && IsHigher(_ay, _cy) && _bd && _cd)
             {
                 AddOuterCorner(true, true);
             }
 
             //Case 2
-            else if (IsHigher(ay, cy) && IsHigher(by, dy) && ab && cd)
+            else if (IsHigher(_ay, _cy) && IsHigher(_by, _dy) && _ab && _cd)
             {
                 AddEdge(true, true);
             }
 
             //Case 3
-            else if (IsHigher(ay, by) && IsHigher(ay, cy) && IsHigher(by, dy) && cd)
+            else if (IsHigher(_ay, _by) && IsHigher(_ay, _cy) && IsHigher(_by, _dy) && _cd)
             {
                 AddEdge(true, true, 0.5f, 1);
-                AddOuterCorner(false, true, true, by);
+                AddOuterCorner(false, true, true, _by);
             }
             //Case 4
-            else if (IsHigher(by, ay) && IsHigher(ay, cy) && IsHigher(by, dy) && cd)
+            else if (IsHigher(_by, _ay) && IsHigher(_ay, _cy) && IsHigher(_by, _dy) && _cd)
             {
                 AddEdge(true, true, 0, 0.5f);
                 RotateCell(1);
-                AddOuterCorner(false, true, true, cy);
+                AddOuterCorner(false, true, true, _cy);
             }
 
             //Case5
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && IsLower(dy, cy) && IsMerged(by, cy))
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsLower(_dy, _by) && IsLower(_dy, _cy) && IsMerged(_by, _cy))
             {
                 AddInnerCorner(true, false);
-                AddDiagonalFloor(by, cy, true, true);
+                AddDiagonalFloor(_by, _cy, true, true);
                 RotateCell(2);
                 AddInnerCorner(true, false);
             }
             //Case 5.5
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && IsLower(dy, cy) && IsHigher(by, cy))
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsLower(_dy, _by) && IsLower(_dy, _cy) && IsHigher(_by, _cy))
             {
                 AddInnerCorner(true, false, true);
-                AddDiagonalFloor(cy, cy, true, true);
+                AddDiagonalFloor(_cy, _cy, true, true);
 
                 RotateCell(2);
                 AddInnerCorner(true, false, true);
@@ -193,69 +188,69 @@ struct GenerateChunkJob : IJobParallelFor
                 AddOuterCorner(false, true);
             }
             //Case 6
-            else if (IsLower(ay, by) && IsLower(ay, cy) && bd && cd)
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && _bd && _cd)
             {
                 AddInnerCorner(true, true);
             }
 
             //Case 7
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, by) && IsHigher(dy, cy) && IsMerged(by, cy))
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsHigher(_dy, _by) && IsHigher(_dy, _cy) && IsMerged(_by, _cy))
             {
 
                 AddInnerCorner(true, false);
-                AddDiagonalFloor(by, cy, true, false);
+                AddDiagonalFloor(_by, _cy, true, false);
                 RotateCell(2);
                 AddOuterCorner(false, true);
             }
             //Case 8
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, cy) && bd)
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsLower(_dy, _cy) && _bd)
             {
                 AddInnerCorner(true, false, true);
 
                 StartFloor();
                 AddFace(
-                    AddPoint(1, dy, 1),
-                    AddPoint(0.5f, dy, 1, 1, 0),
-                    AddPoint(1, (by + dy) / 2, 0.5f)
+                    AddPoint(1, _dy, 1),
+                    AddPoint(0.5f, _dy, 1, 1, 0),
+                    AddPoint(1, (_by + _dy) / 2, 0.5f)
                 );
 
                 AddFace(
-                    AddPoint(1, by, 0),
-                    AddPoint(1, (by + dy) / 2, 0.5f),
-                    AddPoint(0.5f, by, 0, 0, 1)
+                    AddPoint(1, _by, 0),
+                    AddPoint(1, (_by + _dy) / 2, 0.5f),
+                    AddPoint(0.5f, _by, 0, 0, 1)
                 );
 
                 AddFace(
-                    AddPoint(0.5f, by, 0, 0, 1),
-                    AddPoint(1, (by + dy) / 2, 0.5f),
-                    AddPoint(0, by, 0.5f, 1, 1)
+                    AddPoint(0.5f, _by, 0, 0, 1),
+                    AddPoint(1, (_by + _dy) / 2, 0.5f),
+                    AddPoint(0, _by, 0.5f, 1, 1)
                 );
 
                 AddFace(
-                    AddPoint(0.5f, dy, 1, 1, 0),
-                    AddPoint(0, by, 0.5f, 1, 1),
-                    AddPoint(1, (by + dy) / 2, 0.5f)
+                    AddPoint(0.5f, _dy, 1, 1, 0),
+                    AddPoint(0, _by, 0.5f, 1, 1),
+                    AddPoint(1, (_by + _dy) / 2, 0.5f)
                 );
                 StartWall();
                 AddFace(
-                    AddPoint(0, by, 0.5f),
-                    AddPoint(0.5f, dy, 1),
-                    AddPoint(0, cy, 0.5f)
+                    AddPoint(0, _by, 0.5f),
+                    AddPoint(0.5f, _dy, 1),
+                    AddPoint(0, _cy, 0.5f)
                 );
                 AddFace(
-                    AddPoint(0.5f, cy, 1),
-                    AddPoint(0, cy, 0.5f),
-                    AddPoint(0.5f, dy, 1)
+                    AddPoint(0.5f, _cy, 1),
+                    AddPoint(0, _cy, 0.5f),
+                    AddPoint(0.5f, _dy, 1)
                 );
                 StartFloor();
                 AddFace(
-                    AddPoint(0, cy, 1),
-                    AddPoint(0, cy, 0.5f, 0, 1),
-                    AddPoint(0.5f, cy, 1, 0, 1)
+                    AddPoint(0, _cy, 1),
+                    AddPoint(0, _cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, _cy, 1, 0, 1)
                 );
             }
             //Case 9
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsLower(dy, by) && cd)
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsLower(_dy, _by) && _cd)
             {
 
                 AddInnerCorner(true, false, true);
@@ -263,53 +258,53 @@ struct GenerateChunkJob : IJobParallelFor
                 StartFloor();
                 //D Corner
                 AddFace(
-                    AddPoint(1, dy, 1, 0, 0),
-                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
-                    AddPoint(1, dy, 0.5f, 1, 0)
+                    AddPoint(1, _dy, 1, 0, 0),
+                    AddPoint(0.5f, (_dy + _cy) / 2, 1, 0, 0),
+                    AddPoint(1, _dy, 0.5f, 1, 0)
                 );
                 //C Corner
                 AddFace(
-                    AddPoint(0, cy, 1, 0, 0),
-                    AddPoint(0, cy, 0.5f, 0, 1),
-                    AddPoint(0.5f, (dy + cy) / 2, 1)
+                    AddPoint(0, _cy, 1, 0, 0),
+                    AddPoint(0, _cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, (_dy + _cy) / 2, 1)
                 );
 
                 //Center floors
                 AddFace(
-                    AddPoint(0, cy, 0.5f, 0, 1),
-                    AddPoint(0.5f, cy, 0, 1, 1),
-                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0)
+                    AddPoint(0, _cy, 0.5f, 0, 1),
+                    AddPoint(0.5f, _cy, 0, 1, 1),
+                    AddPoint(0.5f, (_dy + _cy) / 2, 1, 0, 0)
                 );
 
                 AddFace(
-                    AddPoint(1, dy, 0.5f, 1, 0f),
-                    AddPoint(0.5f, (dy + cy) / 2, 1, 0, 0),
-                    AddPoint(0.5f, cy, 0, 1, 1)
+                    AddPoint(1, _dy, 0.5f, 1, 0f),
+                    AddPoint(0.5f, (_dy + _cy) / 2, 1, 0, 0),
+                    AddPoint(0.5f, _cy, 0, 1, 1)
                 );
 
                 //Walls to upper corner
                 StartWall();
                 AddFace(
-                    AddPoint(0.5f, cy, 0),
-                    AddPoint(0.5f, by, 0),
-                    AddPoint(1, dy, 0.5f)
+                    AddPoint(0.5f, _cy, 0),
+                    AddPoint(0.5f, _by, 0),
+                    AddPoint(1, _dy, 0.5f)
                 );
 
                 AddFace(
-                    AddPoint(1, by, 0.5f),
-                    AddPoint(1, dy, 0.5f),
-                    AddPoint(0.5f, by, 0)
+                    AddPoint(1, _by, 0.5f),
+                    AddPoint(1, _dy, 0.5f),
+                    AddPoint(0.5f, _by, 0)
                 );
 
                 StartFloor();
                 AddFace(
-                    AddPoint(1, by, 0),
-                    AddPoint(1, by, 0.5f, 0, 1),
-                    AddPoint(0.5f, by, 0, 0, 1)
+                    AddPoint(1, _by, 0),
+                    AddPoint(1, _by, 0.5f, 0, 1),
+                    AddPoint(0.5f, _by, 0, 0, 1)
                 );
             }
             //Case 10
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, cy) && bd)
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsHigher(_dy, _cy) && _bd)
             {
                 AddInnerCorner(true, false, true, true, false);
 
@@ -317,7 +312,7 @@ struct GenerateChunkJob : IJobParallelFor
                 AddEdge(false, true);
             }
             //Case 11
-            else if (IsLower(ay, by) && IsLower(ay, cy) && IsHigher(dy, by) && cd)
+            else if (IsLower(_ay, _by) && IsLower(_ay, _cy) && IsHigher(_dy, _by) && _cd)
             {
                 AddInnerCorner(true, false, true, false, true);
 
@@ -325,7 +320,7 @@ struct GenerateChunkJob : IJobParallelFor
                 AddEdge(false, true);
             }
             //Case 12
-            else if (IsLower(ay, by) && IsLower(by, dy) && IsLower(dy, cy) && IsHigher(cy, ay))
+            else if (IsLower(_ay, _by) && IsLower(_by, _dy) && IsLower(_dy, _cy) && IsHigher(_cy, _ay))
             {
                 AddInnerCorner(true, false, true, false, true);
 
@@ -333,30 +328,30 @@ struct GenerateChunkJob : IJobParallelFor
                 AddEdge(false, true, 0, 0.5f);
 
                 RotateCell(1);
-                AddOuterCorner(false, true, true, cy);
+                AddOuterCorner(false, true, true, _cy);
             }
             //Case 13
-            else if (IsLower(ay, cy) && IsLower(cy, dy) && IsLower(dy, by) && IsHigher(by, ay))
+            else if (IsLower(_ay, _cy) && IsLower(_cy, _dy) && IsLower(_dy, _by) && IsHigher(_by, _ay))
             {
                 AddInnerCorner(true, false, true, true, false);
 
                 RotateCell(1);
                 AddEdge(false, true, 0.5f, 1);
 
-                AddOuterCorner(false, true, true, by);
+                AddOuterCorner(false, true, true, _by);
             }
             //Case 14
-            else if (IsLower(ay, by) && IsLower(by, cy) && IsLower(cy, dy))
+            else if (IsLower(_ay, _by) && IsLower(_by, _cy) && IsLower(_cy, _dy))
             {
                 AddInnerCorner(true, false, true, false, true);
 
                 RotateCell(2);
                 AddEdge(false, true, 0.5f, 1);
 
-                AddOuterCorner(false, true, true, by);
+                AddOuterCorner(false, true, true, _by);
             }
             //Case 15
-            else if (IsLower(ay, cy) && IsLower(cy, by) && IsLower(by, dy))
+            else if (IsLower(_ay, _cy) && IsLower(_cy, _by) && IsLower(_by, _dy))
             {
                 AddInnerCorner(true, false, true, true, false);
 
@@ -364,83 +359,83 @@ struct GenerateChunkJob : IJobParallelFor
                 AddEdge(false, true, 0, 0.5f);
 
                 RotateCell(1);
-                AddOuterCorner(false, true, true, cy);
+                AddOuterCorner(false, true, true, _cy);
             }
             //Case 16
-            else if (ab && bd && cd && IsHigher(ay, cy))
+            else if (_ab && _bd && _cd && IsHigher(_ay, _cy))
             {
-                float edgeBy = (by + dy) / 2;
-                float edgeDy = (by + dy) / 2;
+                float edgeBy = (_by + _dy) / 2;
+                float edgeDy = (_by + _dy) / 2;
 
                 StartFloor();
 
                 AddFace(
-                    AddPoint(0, ay, 0),
-                    AddPoint(1, by, 0),
+                    AddPoint(0, _ay, 0),
+                    AddPoint(1, _by, 0),
                     AddPoint(1, edgeBy, 0.5f)
                 );
                 AddFace(
                     AddPoint(1, edgeBy, 0.5f, 0, 1),
-                    AddPoint(0, ay, 0.5f, 0, 1),
-                    AddPoint(0, ay, 0)
+                    AddPoint(0, _ay, 0.5f, 0, 1),
+                    AddPoint(0, _ay, 0)
                 );
 
                 StartWall();
                 AddFace(
-                    AddPoint(0, cy, 0.5f, 0, 0),
-                    AddPoint(0, ay, 0.5f, 0, 1),
+                    AddPoint(0, _cy, 0.5f, 0, 0),
+                    AddPoint(0, _ay, 0.5f, 0, 1),
                     AddPoint(1, edgeDy, 0.5f, 1, 0)
                 );
 
                 StartFloor();
                 AddFace(
-                    AddPoint(0, cy, 0.5f, 1, 0),
+                    AddPoint(0, _cy, 0.5f, 1, 0),
                     AddPoint(1, edgeDy, 0.5f, 1, 0),
-                    AddPoint(0, cy, 1)
+                    AddPoint(0, _cy, 1)
                 );
 
                 AddFace(
-                    AddPoint(1, dy, 1),
-                    AddPoint(0, cy, 1),
+                    AddPoint(1, _dy, 1),
+                    AddPoint(0, _cy, 1),
                     AddPoint(1, edgeDy, 0.5f)
                 );
             }
             //Case 17
-            else if (ab && ac && cd && IsHigher(by, dy))
+            else if (_ab && _ac && _cd && IsHigher(_by, _dy))
             {
-                var edgeAy = (ay + cy) / 2;
-                var edgeCy = (ay + cy) / 2;
+                var edgeAy = (_ay + _cy) / 2;
+                var edgeCy = (_ay + _cy) / 2;
 
                 StartFloor();
                 AddFace(
-                    AddPoint(0, ay, 0),
-                    AddPoint(1, by, 0),
+                    AddPoint(0, _ay, 0),
+                    AddPoint(1, _by, 0),
                     AddPoint(0, edgeAy, 0.5f)
                 );
 
                 AddFace(
-                    AddPoint(1, by, 0.5f, 0, 1),
+                    AddPoint(1, _by, 0.5f, 0, 1),
                     AddPoint(0, edgeAy, 0.5f, 0, 1),
-                    AddPoint(1, by, 0)
+                    AddPoint(1, _by, 0)
                 );
 
                 StartWall();
                 AddFace(
-                    AddPoint(1, by, 0.5f, 1, 1),
-                    AddPoint(1, dy, 0.5f, 1, 0),
+                    AddPoint(1, _by, 0.5f, 1, 1),
+                    AddPoint(1, _dy, 0.5f, 1, 0),
                     AddPoint(0, edgeAy, 0.5f, 0, 0)
                 );
 
                 StartFloor();
                 AddFace(
                     AddPoint(0, edgeCy, 0.5f, 1, 0),
-                    AddPoint(1, dy, 0.5f, 1, 0),
-                    AddPoint(1, dy, 1)
+                    AddPoint(1, _dy, 0.5f, 1, 0),
+                    AddPoint(1, _dy, 1)
                 );
                 AddFace(
-                    AddPoint(0, cy, 1),
+                    AddPoint(0, _cy, 1),
                     AddPoint(0, edgeCy, 0.5f),
-                    AddPoint(1, dy, 1)
+                    AddPoint(1, _dy, 1)
                 );
             }
             else
@@ -452,57 +447,56 @@ struct GenerateChunkJob : IJobParallelFor
                 break;
             }
         }
-        if (!caseFound)
-        {
-            Debug.Log("Case not found");
-            return;
-        }
+
+        if (caseFound) return;
+        Debug.Log("Case not found");
+        return;
     }
 
-    void RotateCell(int rotations)
+    private void RotateCell(int rotations)
     {
-        r = (r + 4 + rotations) % 4;
+        _r = (_r + 4 + rotations) % 4;
 
-        ab = cellEdges[r];
-        bd = cellEdges[(r + 1) % 4];
-        cd = cellEdges[(r + 2) % 4];
-        ac = cellEdges[(r + 3) % 4];
+        _ab = CellEdges[_r];
+        _bd = CellEdges[(_r + 1) % 4];
+        _cd = CellEdges[(_r + 2) % 4];
+        _ac = CellEdges[(_r + 3) % 4];
 
 
-        ay = pointHeights[r];
-        by = pointHeights[(r + 1) % 4];
-        dy = pointHeights[(r + 2) % 4];
-        cy = pointHeights[(r + 3) % 4];
+        _ay = PointHeights[_r];
+        _by = PointHeights[(_r + 1) % 4];
+        _dy = PointHeights[(_r + 2) % 4];
+        _cy = PointHeights[(_r + 3) % 4];
     }
 
 
-    void AddFullFloor()
+    private void AddFullFloor()
     {
         StartFloor();
         if (higherPolyFloors)
         {
-            var ey = (ay + by + cy + dy) / 4;
+            var ey = (_ay + _by + _cy + _dy) / 4;
             AddFace(
-                AddPoint(0, ay, 0),
-                AddPoint(1, by, 0),
+                AddPoint(0, _ay, 0),
+                AddPoint(1, _by, 0),
                 AddPoint(0.5f, ey, 0.5f, 0, 0, true)
             );
 
             AddFace(
-                AddPoint(1, by, 0),
-                AddPoint(1, dy, 1),
+                AddPoint(1, _by, 0),
+                AddPoint(1, _dy, 1),
                 AddPoint(0.5f, ey, 0.5f, 0, 0, true)
             );
 
             AddFace(
-                AddPoint(1, dy, 1),
-                AddPoint(0, cy, 1),
+                AddPoint(1, _dy, 1),
+                AddPoint(0, _cy, 1),
                 AddPoint(0.5f, ey, 0.5f, 0, 0, true)
             );
 
             AddFace(
-                AddPoint(0, cy, 1),
-                AddPoint(0, ay, 0),
+                AddPoint(0, _cy, 1),
+                AddPoint(0, _ay, 0),
                 AddPoint(0.5f, ey, 0.5f, 0, 0, true)
             );
         }
@@ -510,81 +504,81 @@ struct GenerateChunkJob : IJobParallelFor
         {
             AddFace(
 
-                AddPoint(0, ay, 0),
-                AddPoint(1, by, 0),
-                AddPoint(0, cy, 1)
+                AddPoint(0, _ay, 0),
+                AddPoint(1, _by, 0),
+                AddPoint(0, _cy, 1)
             );
 
             AddFace(
-                AddPoint(1, dy, 1),
-                AddPoint(0, cy, 1),
-                AddPoint(1, by, 0)
+                AddPoint(1, _dy, 1),
+                AddPoint(0, _cy, 1),
+                AddPoint(1, _by, 0)
             );
         }
     }
 
-    void AddOuterCorner(bool floorBelow = true, bool floorAbove = true, bool flattenBottom = false, float bottomHeight = -1)
+    private void AddOuterCorner(bool floorBelow = true, bool floorAbove = true, bool flattenBottom = false, float bottomHeight = -1)
     {
 
 
-        float edgeBy = flattenBottom ? bottomHeight : by;
-        float edgeCy = flattenBottom ? bottomHeight : cy;
+        float edgeBy = flattenBottom ? bottomHeight : _by;
+        float edgeCy = flattenBottom ? bottomHeight : _cy;
 
         if (floorAbove)
         {
             StartFloor();
             AddFace(
-                AddPoint(0, ay, 0, 0, 0),
-                AddPoint(0.5f, ay, 0, 0, 1),
-                AddPoint(0, ay, 0.5f, 0, 1)
+                AddPoint(0, _ay, 0, 0, 0),
+                AddPoint(0.5f, _ay, 0, 0, 1),
+                AddPoint(0, _ay, 0.5f, 0, 1)
             );
         }
 
         StartWall();
         AddFace(
             AddPoint(0, edgeCy, 0.5f, 0, 0),
-            AddPoint(0, ay, 0.5f, 0, 1),
+            AddPoint(0, _ay, 0.5f, 0, 1),
             AddPoint(0.5f, edgeBy, 0, 1, 0)
         );
 
         AddFace(
-            AddPoint(0.5f, ay, 0, 1, 1),
+            AddPoint(0.5f, _ay, 0, 1, 1),
             AddPoint(0.5f, edgeBy, 0, 1, 0),
-            AddPoint(0, ay, 0.5f, 0, 1)
+            AddPoint(0, _ay, 0.5f, 0, 1)
         );
 
         if (floorBelow)
         {
             StartFloor();
             AddFace(
-                AddPoint(1, dy, 1),
-                AddPoint(0, cy, 1),
-                AddPoint(1, by, 0)
+                AddPoint(1, _dy, 1),
+                AddPoint(0, _cy, 1),
+                AddPoint(1, _by, 0)
             );
 
             AddFace(
-                AddPoint(0, cy, 1),
-                AddPoint(0, cy, 0.5f, 1, 0),
-                AddPoint(0.5f, by, 0, 1, 0)
+                AddPoint(0, _cy, 1),
+                AddPoint(0, _cy, 0.5f, 1, 0),
+                AddPoint(0.5f, _by, 0, 1, 0)
             );
 
             AddFace(
-                AddPoint(1, by, 0),
-                AddPoint(0, cy, 1),
-                AddPoint(0.5f, by, 0, 1, 0)
+                AddPoint(1, _by, 0),
+                AddPoint(0, _cy, 1),
+                AddPoint(0.5f, _by, 0, 1, 0)
             );
         }
 
     }
 
 
-    void AddEdge(bool floorBelow, bool floorAbove, float aX = 0, float bX = 1)
+    private void AddEdge(bool floorBelow, bool floorAbove, float aX = 0, float bX = 1)
     {
 
-        var edgeAy = ab ? ay : Mathf.Min(ay, by);
-        var edgeBy = ab ? by : Mathf.Min(ay, by);
-        var edgeCy = cd ? cy : Mathf.Max(cy, dy);
-        var edgeDy = cd ? dy : Mathf.Max(cy, dy);
+        var edgeAy = _ab ? _ay : Mathf.Min(_ay, _by);
+        var edgeBy = _ab ? _by : Mathf.Min(_ay, _by);
+        var edgeCy = _cd ? _cy : Mathf.Max(_cy, _dy);
+        var edgeDy = _cd ? _dy : Mathf.Max(_cy, _dy);
 
         if (floorAbove)
         {
@@ -654,51 +648,51 @@ struct GenerateChunkJob : IJobParallelFor
         {
             StartFloor();
             AddFace(
-                AddPoint(0, cy, 0.5f, 1, 0),
-                AddPoint(1, dy, 0.5f, 1, 0),
-                AddPoint(0, cy, 1)
+                AddPoint(0, _cy, 0.5f, 1, 0),
+                AddPoint(1, _dy, 0.5f, 1, 0),
+                AddPoint(0, _cy, 1)
             );
             AddFace(
-                AddPoint(1, dy, 1),
-                AddPoint(0, cy, 1),
-                AddPoint(1, dy, 0.5f, 1, 0)
+                AddPoint(1, _dy, 1),
+                AddPoint(0, _cy, 1),
+                AddPoint(1, _dy, 0.5f, 1, 0)
             );
         }
     }
 
-    void AddInnerCorner(bool lowerFloor = true, bool fullUpperFloor = true, bool flatten = false, bool bdFloor = false, bool cdFloor = false)
+    private void AddInnerCorner(bool lowerFloor = true, bool fullUpperFloor = true, bool flatten = false, bool bdFloor = false, bool cdFloor = false)
     {
 
 
-        var cornerBy = flatten ? Mathf.Min(by, cy) : by;
-        var cornerCy = flatten ? Mathf.Min(by, cy) : cy;
+        var cornerBy = flatten ? Mathf.Min(_by, _cy) : _by;
+        var cornerCy = flatten ? Mathf.Min(_by, _cy) : _cy;
 
         if (lowerFloor)
         {
             StartFloor();
             AddFace(
-                AddPoint(0, ay, 0),
-                AddPoint(0.5f, ay, 0, 1, 0),
-                AddPoint(0, ay, 0.5f, 1, 0)
+                AddPoint(0, _ay, 0),
+                AddPoint(0.5f, _ay, 0, 1, 0),
+                AddPoint(0, _ay, 0.5f, 1, 0)
             );
         }
         StartWall();
         AddFace(
-            AddPoint(0, ay, 0.5f, 1, 0),
-            AddPoint(0.5f, ay, 0, 0, 0),
+            AddPoint(0, _ay, 0.5f, 1, 0),
+            AddPoint(0.5f, _ay, 0, 0, 0),
             AddPoint(0, cornerCy, 0.5f, 1, 1)
         );
 
         AddFace(
             AddPoint(0.5f, cornerBy, 0, 0, 1),
             AddPoint(0, cornerCy, 0.5f, 1, 1),
-            AddPoint(0.5f, ay, 0, 0, 0)
+            AddPoint(0.5f, _ay, 0, 0, 0)
         );
         StartFloor();
         if (fullUpperFloor)
         {
             AddFace(
-                AddPoint(1, dy, 1),
+                AddPoint(1, _dy, 1),
                 AddPoint(0, cornerCy, 1),
                 AddPoint(1, cornerBy, 0)
             );
@@ -716,34 +710,34 @@ struct GenerateChunkJob : IJobParallelFor
         if (cdFloor)
         {
             AddFace(
-                AddPoint(1, by, 0, 0, 0),
-                AddPoint(0, by, 0.5f, 1, 1),
-                AddPoint(0.5f, by, 0, 0, 1)
+                AddPoint(1, _by, 0, 0, 0),
+                AddPoint(0, _by, 0.5f, 1, 1),
+                AddPoint(0.5f, _by, 0, 0, 1)
             );
 
             AddFace(
-                AddPoint(1, by, 0, 0, 0),
-                AddPoint(1, by, 0.5f, 1, -1),
-                AddPoint(0, by, 0.5f, 1, 1)
+                AddPoint(1, _by, 0, 0, 0),
+                AddPoint(1, _by, 0.5f, 1, -1),
+                AddPoint(0, _by, 0.5f, 1, 1)
             );
         }
 
         if (bdFloor)
         {
             AddFace(
-                AddPoint(0, cy, 0.5f, 0, 1),
-                AddPoint(0.5f, cy, 0, 1, 1),
-                AddPoint(0, cy, 1, 0, 0)
+                AddPoint(0, _cy, 0.5f, 0, 1),
+                AddPoint(0.5f, _cy, 0, 1, 1),
+                AddPoint(0, _cy, 1, 0, 0)
             );
             AddFace(
-                AddPoint(0.5f, cy, 1, 1, -1),
-                AddPoint(0, cy, 1, 0, 0),
-                AddPoint(0.5f, cy, 0, 1, 1)
+                AddPoint(0.5f, _cy, 1, 1, -1),
+                AddPoint(0, _cy, 1, 0, 0),
+                AddPoint(0.5f, _cy, 0, 1, 1)
             );
         }
     }
 
-    void AddDiagonalFloor(float bY, float cY, bool aCliff, bool dCliff)
+    private void AddDiagonalFloor(float bY, float cY, bool aCliff, bool dCliff)
     {
 
         StartFloor();
@@ -809,28 +803,28 @@ struct GenerateChunkJob : IJobParallelFor
 
 
 
-    Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
+    private Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
     {
-        for (int i = 0; i < r; i++)
+        for (int i = 0; i < _r; i++)
         {
             var temp = x;
             x = 1 - z;
             z = temp;
         }
 
-        var uv = floorMode ? new Vector2(uvX, uvY) : new Vector2(1, 1);
+        var uv = _floorMode ? new Vector2(uvX, uvY) : new Vector2(1, 1);
 
         float4 color = new float4(1, 1, 1, 1);
         if (diagMidpoint)
         {
             var adColor = math.lerp(
-                colorMap[cellCoords.y * terrainSize.x + cellCoords.x],
-                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x + 1],
+                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x],
+                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x + 1],
                 .5f
             );
             var bcColor = math.lerp(
-                colorMap[cellCoords.y * terrainSize.x + cellCoords.x + 1],
-                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x],
+                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x + 1],
+                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x],
                 .5f
             );
 
@@ -854,69 +848,69 @@ struct GenerateChunkJob : IJobParallelFor
         {
 
             var abColor = math.lerp(
-                colorMap[cellCoords.y * terrainSize.x + cellCoords.x],
-                colorMap[cellCoords.y * terrainSize.x + cellCoords.x + 1],
+                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x],
+                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x + 1],
                 x
             );
             var cdColor = math.lerp(
-                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x],
-                colorMap[(cellCoords.y + 1) * terrainSize.x + cellCoords.x + 1],
+                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x],
+                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x + 1],
                 x
             );
             color = math.lerp(abColor, cdColor, z);
         }
 
-        colors.Add(new float4(color.x, color.y, color.z, color.w));
+        Colors.Add(new float4(color.x, color.y, color.z, color.w));
         float3 vert = new float3(
-            (cellCoords.x + x) * cellSize.x,
+            (_cellCoords.x + x) * cellSize.x,
             y,
-            (cellCoords.y + z) * cellSize.y
+            (_cellCoords.y + z) * cellSize.y
         );
-        uvs.Add(uv);
+        Uvs.Add(uv);
         return vert;
     }
 
-    void AddFace(float3 v0, float3 v1, float3 v2)
+    private void AddFace(float3 v0, float3 v1, float3 v2)
     {
-        var vertexCount = vertices.Length;
-        vertices.Add(v0);
-        vertices.Add(v1);
-        vertices.Add(v2);
+        var vertexCount = Vertices.Length;
+        Vertices.Add(v0);
+        Vertices.Add(v1);
+        Vertices.Add(v2);
 
-        triangles.Add(vertexCount + 2);
-        triangles.Add(vertexCount + 1);
-        triangles.Add(vertexCount);
+        Triangles.Add(vertexCount + 2);
+        Triangles.Add(vertexCount + 1);
+        Triangles.Add(vertexCount);
 
         float3 normal = -math.normalize(math.cross(v1 - v0, v2 - v0));
 
-        normals.Add(normal);
-        normals.Add(normal);
-        normals.Add(normal);
+        Normals.Add(normal);
+        Normals.Add(normal);
+        Normals.Add(normal);
     }
 
-    bool IsHigher(float a, float b)
+    private bool IsHigher(float a, float b)
     {
         return a - b > mergeThreshold;
     }
 
-    bool IsLower(float a, float b)
+    private bool IsLower(float a, float b)
     {
         return a - b < -mergeThreshold;
     }
 
-    bool IsMerged(float a, float b)
+    private bool IsMerged(float a, float b)
     {
         return Mathf.Abs(a - b) < mergeThreshold;
     }
 
 
-    void StartFloor()
+    private void StartFloor()
     {
-        floorMode = true;
+        _floorMode = true;
     }
-    void StartWall()
+    private void StartWall()
     {
-        floorMode = false;
+        _floorMode = false;
     }
 }
 
@@ -928,11 +922,11 @@ public class MarchingSquaresChunk : MonoBehaviour
     public Mesh mesh;
 
     //Mesh data
-    NativeArray<float3> vertices;
-    NativeArray<float4> colors;
-    NativeArray<int> triangles;
-    NativeArray<float2> uvs;
-    NativeArray<float3> normals;
+    private NativeArray<float3> _vertices;
+    private NativeArray<float4> _colors;
+    private NativeArray<int> _triangles;
+    private NativeArray<float2> _uvs;
+    private NativeArray<float3> _normals;
 
     public List<float3> vertCache;
     public List<float3> normCache;
@@ -940,27 +934,27 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public MarchingSquaresTerrain terrain;
     public Vector2Int chunkPosition;
-
-    public bool higherPolyFloors = true;
-
+    
     public float[] heightMap;
     public float4[] colorMap;
 
-    public bool IsDirty = false;
+    public bool isDirty;
 
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
 
     public void InitializeTerrain(bool shouldRegenerate = true)
     {
-        mesh = new Mesh();
-        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh = new Mesh
+        {
+            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+        };
         InitializeColorMap();
         InitializeHeightMap();
         RegenerateMesh();
     }
 
-    void InitializeColorMap()
+    private void InitializeColorMap()
     {
         colorMap = new float4[terrain.dimensions.z * terrain.dimensions.x];
         for (int z = 0; z < terrain.dimensions.z; z++)
@@ -972,7 +966,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         }
     }
 
-    void InitializeHeightMap()
+    private void InitializeHeightMap()
     {
         heightMap = new float[terrain.dimensions.z * terrain.dimensions.x];
     }
@@ -980,13 +974,10 @@ public class MarchingSquaresChunk : MonoBehaviour
     public int GetIndex(int x, int z)
     {
         //Check if within bounds
-        if (x < 0 || x >= terrain.dimensions.x || z < 0 || z >= terrain.dimensions.z)
-        {
-            print("Out of bounds");
-            return 0;
-        }
-
-        return x + z * terrain.dimensions.x;
+        if (x >= 0 && x < terrain.dimensions.x && z >= 0 && z < terrain.dimensions.z)
+            return x + z * terrain.dimensions.x;
+        
+        return 0;
     }
 
     public void RegenerateMesh()
@@ -995,10 +986,10 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         GenerateTerrainCells();
 
-        MeshFilter mf = gameObject.GetComponent<MeshFilter>();
+        var mf = gameObject.GetComponent<MeshFilter>();
         mf.sharedMesh = mesh;
 
-        IsDirty = false;
+        isDirty = false;
     }
 
     private void OnDestroy()
@@ -1013,18 +1004,18 @@ public class MarchingSquaresChunk : MonoBehaviour
         GenerateChunkJob job = new GenerateChunkJob()
         {
             //Data
-            heightMap = new NativeArray<float>(heightMap, Allocator.TempJob),
-            colorMap = new NativeArray<float4>(colorMap, Allocator.TempJob),
+            HeightMap = new NativeArray<float>(heightMap, Allocator.TempJob),
+            ColorMap = new NativeArray<float4>(colorMap, Allocator.TempJob),
 
             //Mesh data
-            vertices = new NativeList<float3>(0, Allocator.Persistent),
-            colors = new NativeList<float4>(0, Allocator.Persistent),
-            uvs = new NativeList<float2>(0, Allocator.Persistent),
-            triangles = new NativeList<int>(0, Allocator.Persistent),
-            normals = new NativeList<float3>(0, Allocator.Persistent),
+            Vertices = new NativeList<float3>(0, Allocator.Persistent),
+            Colors = new NativeList<float4>(0, Allocator.Persistent),
+            Uvs = new NativeList<float2>(0, Allocator.Persistent),
+            Triangles = new NativeList<int>(0, Allocator.Persistent),
+            Normals = new NativeList<float3>(0, Allocator.Persistent),
 
-            cellEdges = new NativeArray<bool>(new bool[4] { false, false, false, false }, Allocator.Persistent),
-            pointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
+            CellEdges = new NativeArray<bool>(new bool[4] { false, false, false, false }, Allocator.Persistent),
+            PointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
 
             //Config
             higherPolyFloors = true,
@@ -1035,87 +1026,92 @@ public class MarchingSquaresChunk : MonoBehaviour
 
 
 
-        int totalLoop = (terrain.dimensions.x) * (terrain.dimensions.z);
+        var totalLoop = (terrain.dimensions.x) * (terrain.dimensions.z);
 
-        JobHandle handle = job.Schedule(totalLoop, terrain.dimensions.x * terrain.dimensions.z);
+        var handle = job.Schedule(totalLoop, terrain.dimensions.x * terrain.dimensions.z);
 
         handle.Complete();
 
-        vertices = job.vertices.AsArray();
-        colors = job.colors.AsArray();
-        triangles = job.triangles.AsArray();
-        uvs = job.uvs.AsArray();
-        normals = job.normals.AsArray();
+        _vertices = job.Vertices.AsArray();
+        _colors = job.Colors.AsArray();
+        _triangles = job.Triangles.AsArray();
+        _uvs = job.Uvs.AsArray();
+        _normals = job.Normals.AsArray();
 
         //memcpy vertices into vertCache
-        vertCache = new List<float3>(vertices.Length);
-        normCache = new List<float3>(normals.Length);
-        triCache = new List<int>(triangles.Length);
-        for (int i = 0; i < vertices.Length; i++)
-            vertCache.Add(vertices[i]);
+        vertCache = new List<float3>(_vertices.Length);
+        normCache = new List<float3>(_normals.Length);
+        triCache = new List<int>(_triangles.Length);
+        foreach (var t in _vertices)
+            vertCache.Add(t);
 
-        for (int i = 0; i < normals.Length; i++)
-            normCache.Add(normals[i]);
+        foreach (var t in _normals)
+            normCache.Add(t);
 
-        for (int i = 0; i < triangles.Length; i++)
-            triCache.Add(triangles[i]);
+        foreach (var t in _triangles)
+            triCache.Add(t);
 
 
-        mesh.SetVertices<float3>(vertices);
-        mesh.SetColors<float4>(colors);
-        mesh.SetIndices(triangles, MeshTopology.Triangles, 0);
-        mesh.SetUVs<float2>(0, uvs);
+        mesh.SetVertices<float3>(_vertices);
+        mesh.SetColors<float4>(_colors);
+        mesh.SetIndices(_triangles, MeshTopology.Triangles, 0);
+        mesh.SetUVs<float2>(0, _uvs);
         mesh.Optimize();
         mesh.RecalculateNormals(45);
 
-        job.vertices.Dispose();
-        job.colors.Dispose();
-        job.triangles.Dispose();
-        job.uvs.Dispose();
-        job.normals.Dispose();
+        job.Vertices.Dispose();
+        job.Colors.Dispose();
+        job.Triangles.Dispose();
+        job.Uvs.Dispose();
+        job.Normals.Dispose();
 
     }
 
-    public void GenerateHeightmap(NoiseSettings ns)
+    public void GenerateHeightmap(NoiseSettings ns,Texture2D heightmap = null)
     {
-        for (int z = 0; z < terrain.dimensions.z; z++)
-        {
-            for (int x = 0; x < terrain.dimensions.x; x++)
+        for (var z = 0; z < terrain.dimensions.z; z++)
             {
-                LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
-                    ns.frequency,
-                    ns.lacunarity,
-                    ns.persistence,
-                    ns.octaves,
-                    ns.seed,
-                    LibNoise.QualityMode.High
-                );
-                var point = new Vector3(x, 0, z);
-                //Convert local coordinates (0 - terrain.dimensions) to world coordinates (x - terrain.dimensions * cellSize)
-                float wX = (chunkPosition.x * (terrain.dimensions.x - 1)) + x;
-                float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
-
-                float noiseValue = (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
-                switch (ns.mixMode)
+                for (var x = 0; x < terrain.dimensions.x; x++)
                 {
-                    case NoiseMixMode.Add:
-                        heightMap[GetIndex(z, x)] += noiseValue;
-                        break;
-                    case NoiseMixMode.Subtract:
-                        heightMap[GetIndex(z, x)] -= noiseValue;
-                        break;
-                    case NoiseMixMode.Multiply:
-                        heightMap[GetIndex(z, x)] *= noiseValue;
-                        break;
-                    case NoiseMixMode.Replace:
-                        heightMap[GetIndex(z, x)] = noiseValue;
-                        break;
+
+                    LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
+                        ns.frequency,
+                        ns.lacunarity,
+                        ns.persistence,
+                        ns.octaves,
+                        ns.seed,
+                        LibNoise.QualityMode.High
+                    );
+                    var point = new Vector3(x, 0, z);
+                    //Convert local coordinates (0 - terrain.dimensions) to world coordinates (x - terrain.dimensions * cellSize)
+                    float wX = (chunkPosition.x * (terrain.dimensions.x - 1)) + x;
+                    float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
+
+                    var noiseValue =
+                        (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
+                    switch (ns.mixMode)
+                    {
+                        case NoiseMixMode.Add:
+                            heightMap[GetIndex(z, x)] += noiseValue;
+                            break;
+                        case NoiseMixMode.Subtract:
+                            heightMap[GetIndex(z, x)] -= noiseValue;
+                            break;
+                        case NoiseMixMode.Multiply:
+                            heightMap[GetIndex(z, x)] *= noiseValue;
+                            break;
+                        case NoiseMixMode.Replace:
+                            heightMap[GetIndex(z, x)] = noiseValue;
+                            break;
+
+                    }
                 }
             }
-        }
-        IsDirty = true;
+
+        isDirty = true;
     }
-    public bool inBounds(int x, int z)
+
+    private bool InBounds(int x, int z)
     {
         return x >= 0 && x < terrain.dimensions.x && z >= 0 && z < terrain.dimensions.z;
     }
@@ -1123,19 +1119,19 @@ public class MarchingSquaresChunk : MonoBehaviour
     public void DrawHeight(int x, int z, float y, bool setHeight = false)
     {
         //Within bounds?
-        if (!inBounds(z, x))
+        if (!InBounds(z, x))
             return;
 
         heightMap[GetIndex(z, x)] = setHeight ? y : heightMap[GetIndex(z, x)] + y;
-        IsDirty = true;
+        isDirty = true;
     }
 
 
     public void DrawHeights(List<Vector2Int> positions, float height, bool setHeight, bool smooth)
     {
-        for (int i = 0; i < positions.Count; i++)
+        for (var i = 0; i < positions.Count; i++)
         {
-            if (!inBounds(positions[i].y, positions[i].x))
+            if (!InBounds(positions[i].y, positions[i].x))
                 continue;
             if (smooth)
             {
@@ -1150,25 +1146,25 @@ public class MarchingSquaresChunk : MonoBehaviour
             }
         }
 
-        IsDirty = true;
+        isDirty = true;
     }
 
     public void DrawColor(int x, int z, Color color)
     {
-        if (!inBounds(x, z))
+        if (!InBounds(x, z))
             return;
         colorMap[GetIndex(x, z)] = color.ToFloat4();
-        IsDirty = true;
+        isDirty = true;
     }
 
     internal void DrawColors(List<Vector2Int> value, Color color)
     {
-        for (int i = 0; i < value.Count; i++)
+        for (var i = 0; i < value.Count; i++)
         {
-            if (!inBounds((int)value[i].x, (int)value[i].y))
+            if (!InBounds((int)value[i].x, (int)value[i].y))
                 continue;
             colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color.ToFloat4();
         }
-        IsDirty = true;
+        isDirty = true;
     }
 }

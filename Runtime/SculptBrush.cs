@@ -7,28 +7,28 @@ using System.Collections.Generic;
 public class SculptBrush : TerrainTool
 {
 
-    Vector3 mousePosition;
-    Vector3 cellPosWorld;
-    Vector3 totalTerrainSize;
+    private Vector3 _mousePosition;
+    private Vector3 _cellPosWorld;
+    private Vector3 _totalTerrainSize;
 
-    Vector2Int cellPos;
-    Vector2Int chunkPos;
+    private Vector2Int _cellPos;
+    private Vector2Int _chunkPos;
 
-    bool mouseDown = false;
-    bool flattenGeometry=false;
+    private bool _mouseDown;
+    private bool _flattenGeometry;
 
-    float setHeight = 0;
-    float dragHeight = 0;
-    float hoveredCellHeight = 0;
-    float brushSize = 2;
+    private float _setHeight;
+    private float _dragHeight;
+    private float _hoveredCellHeight;
+    private float _brushSize = 2;
 
     //cell world position, chunkPos
-    List<Vector3> selectedCells = new List<Vector3>();
-    List<Vector3> smoothingCells = new List<Vector3>();
+    private List<Vector3> _selectedCells;
+    private List<Vector3> _smoothingCells;
 
-    Bounds selectionBounds;
+    private Bounds _selectionBounds;
 
-    enum ToolState
+    private enum ToolState
     {
         None,
         SmoothingHeight,
@@ -37,28 +37,28 @@ public class SculptBrush : TerrainTool
         DraggingHeight
     }
 
-    ToolState state = ToolState.None;
+    private ToolState _state = ToolState.None;
 
-    GUIStyle style = new GUIStyle();
+    private GUIStyle _style = new GUIStyle();
 
     public override void ToolSelected()
     {
-        setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
+        _setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
 
     }
 
 
     public override void DrawHandles()
     {
-        style.normal.textColor = Color.black;
+        _style.normal.textColor = Color.black;
 
         Handles.color = Color.green;
-        if (state != ToolState.DraggingHeight)
+        if (_state != ToolState.DraggingHeight)
         {
-            Handles.DrawSolidDisc(cellPosWorld + Vector3.up * hoveredCellHeight,Vector3.up, brushSize / 2);
+            Handles.DrawSolidDisc(_cellPosWorld + Vector3.up * _hoveredCellHeight,Vector3.up, _brushSize / 2);
         }
        
-        foreach (var pos in selectedCells)
+        foreach (var pos in _selectedCells)
         {
 
             List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos);
@@ -74,38 +74,38 @@ public class SculptBrush : TerrainTool
                 Handles.color = new Color(0, 1, 0, .5f);
 
                 float cellHeight = c.heightMap[c.GetIndex(localCell.y, localCell.x)];
-                Handles.DrawSolidDisc(pos + Vector3.up * (cellHeight + dragHeight), Vector3.up, t.cellSize.x / 2);
+                Handles.DrawSolidDisc(pos + Vector3.up * (cellHeight + _dragHeight), Vector3.up, t.cellSize.x / 2);
             }
         }
 
         //Draw wire around hovered chunk
-        if (t.chunks.ContainsKey(chunkPos))
+        if (t.chunks.ContainsKey(_chunkPos))
         {
             Handles.color = Color.yellow;
             Vector3 chunkWorldPos = new Vector3(
-                t.chunks[chunkPos].transform.position.x + totalTerrainSize.x / 2,
+                t.chunks[_chunkPos].transform.position.x + _totalTerrainSize.x / 2,
                 0,
-                t.chunks[chunkPos].transform.position.z + totalTerrainSize.z / 2
+                t.chunks[_chunkPos].transform.position.z + _totalTerrainSize.z / 2
             );
-            Handles.DrawWireCube(chunkWorldPos, totalTerrainSize);
+            Handles.DrawWireCube(chunkWorldPos, _totalTerrainSize);
         }
 
         Handles.color = Color.black;
         //Draw text to indicate current state
-        switch(state)
+        switch(_state)
         {
             
             case ToolState.SelectingCells:
-                Handles.Label(mousePosition + Vector3.up * 2, "Selecting Cells",style);
+                Handles.Label(_mousePosition + Vector3.up * 2, "Selecting Cells",_style);
                 break;
             case ToolState.SelectedCells:
-                Handles.Label(mousePosition + Vector3.up * 2, "Selected Cells",style);
+                Handles.Label(_mousePosition + Vector3.up * 2, "Selected Cells",_style);
                 break;
             case ToolState.DraggingHeight:
-                Handles.Label(mousePosition + Vector3.up * 2, $"Dragging Height: {dragHeight}",style);
+                Handles.Label(_mousePosition + Vector3.up * 2, $"Dragging Height: {_dragHeight}",_style);
                 break;
             case ToolState.SmoothingHeight:
-                Handles.Label(mousePosition + Vector3.up * 2, "Smoothing Height",style);
+                Handles.Label(_mousePosition + Vector3.up * 2, "Smoothing Height",_style);
                 break;
         }
     }
@@ -114,63 +114,63 @@ public class SculptBrush : TerrainTool
 
         if (button == 0)
         {
-            switch (state)
+            switch (_state)
             {
                 case ToolState.None:       
-                    state = ToolState.SelectingCells;
+                    _state = ToolState.SelectingCells;
                     break;
                 case ToolState.SelectedCells:
-                    state = ToolState.DraggingHeight;
+                    _state = ToolState.DraggingHeight;
                     break;
                 case ToolState.SmoothingHeight:
-                    mouseDown = true;
+                    _mouseDown = true;
                     break;
             }
         }
     }
     public override void OnMouseDrag(Vector2 delta)
     {
-        switch(state)
+        switch(_state)
         {
             case ToolState.DraggingHeight:
-                dragHeight += -delta.y * 0.1f;
+                _dragHeight += -delta.y * 0.1f;
                 break;
             case ToolState.SmoothingHeight:
-                if (!mouseDown)
+                if (!_mouseDown)
                     return;
-                for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+                for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
                 {
-                    for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+                    for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
                     {
                         Vector3 p = new Vector3(x, 0, y);
-                        Vector3 mouseOffset = mousePosition + p;
+                        Vector3 mouseOffset = _mousePosition + p;
                         //Snap to cell size
                         Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                        bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= brushSize / 2;
+                        bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= _brushSize / 2;
 
-                        if (insideRadius && !smoothingCells.Contains(cellWorld))
+                        if (insideRadius && !_smoothingCells.Contains(cellWorld))
                         {
-                            smoothingCells.Add(cellWorld);
+                            _smoothingCells.Add(cellWorld);
                         }
 
                     }
                 }
 
-                foreach (var cell in smoothingCells)
+                foreach (var cell in _smoothingCells)
                 {
-                    List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cell);
-                    if (chunks.Count > 0)
-                    {
-                        MarchingSquaresChunk c = chunks[0];
-                        Vector2Int localCell = new Vector2Int(
-                            Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
-                            Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
-                        );
-                        t.SmoothHeights(smoothingCells);
-                    }
+                    var chunks = t.GetChunksAtWorldPosition(cell);
+                    if (chunks.Count == 0)
+                        continue;
+                    var c = chunks[0];
+                    var localCell = new Vector2Int(
+                        Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
+                        Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
+                    );
+                    t.SmoothHeights(_smoothingCells);
+                    
                 }
-                smoothingCells.Clear();
+                _smoothingCells.Clear();
                 break;
                 
         }
@@ -181,117 +181,117 @@ public class SculptBrush : TerrainTool
     {
         if(button != 0)
             return;
-        Debug.Log("Current state: " + state);
-        switch (state)
+        Debug.Log("Current state: " + _state);
+        switch (_state)
         {
             case ToolState.SelectingCells:
-                if (selectedCells.Count > 0)
-                    state = ToolState.SelectedCells;
+                if (_selectedCells.Count > 0)
+                    _state = ToolState.SelectedCells;
                 else
-                    state = ToolState.None;
+                    _state = ToolState.None;
                 break;
             case ToolState.DraggingHeight:
-                t.DrawHeights(selectedCells, dragHeight, false);
-                dragHeight = 0;
-                state = ToolState.None;
+                t.DrawHeights(_selectedCells, _dragHeight, false);
+                _dragHeight = 0;
+                _state = ToolState.None;
                 break;
             case ToolState.SmoothingHeight:
-                state = ToolState.None;
+                _state = ToolState.None;
                 break;
         }
 
-        mouseDown = false;
+        _mouseDown = false;
     }
 
-    GUIContent flattenLabel = new GUIContent("Flatten Geometry","Averages the height of manipulated geometry so it'll all be at the same height");
+    private GUIContent _flattenLabel = new GUIContent("Flatten Geometry","Averages the height of manipulated geometry so it'll all be at the same height");
     public override void OnInspectorGUI()
     {
-        flattenGeometry = EditorGUILayout.Toggle(flattenLabel, flattenGeometry);
-        setHeight = EditorGUILayout.FloatField("Set Height", setHeight);
+        _flattenGeometry = EditorGUILayout.Toggle(_flattenLabel, _flattenGeometry);
+        _setHeight = EditorGUILayout.FloatField("Set Height", _setHeight);
 
         //Save setHeight
-        EditorPrefs.SetFloat("setHeight_SCULPTBRUSH", setHeight);
+        EditorPrefs.SetFloat("setHeight_SCULPTBRUSH", _setHeight);
     }
 
     public override void Update()
     {
-        if(selectedCells == null)
-            selectedCells = new List<Vector3>();
+        if(_selectedCells == null)
+            _selectedCells = new List<Vector3>();
 
-        totalTerrainSize = new Vector3(
+        _totalTerrainSize = new Vector3(
             (t.dimensions.x-1) * t.cellSize.x,
             0,
             (t.dimensions.z-1) * t.cellSize.y
         );
-        if (state == ToolState.None && selectedCells.Count > 0)
+        if (_state == ToolState.None && _selectedCells.Count > 0)
         {
-            selectedCells.Clear();
+            _selectedCells.Clear();
         }
 
-        Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
-        Plane groundPlane = new Plane(Vector3.up, t.transform.position);
-        groundPlane.Raycast(ray, out float distance);
-        bool hit = Physics.Raycast(ray, out RaycastHit hitInfo,100, 1 << t.gameObject.layer);
-        mousePosition = hit ? new Vector3(hitInfo.point.x,0,hitInfo.point.z) : ray.GetPoint(distance);
+        var ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
+        var groundPlane = new Plane(Vector3.up, t.transform.position);
+        groundPlane.Raycast(ray, out var distance);
+        var hit = Physics.Raycast(ray, out var hitInfo,100, 1 << t.gameObject.layer);
+        _mousePosition = hit ? new Vector3(hitInfo.point.x,0,hitInfo.point.z) : ray.GetPoint(distance);
 
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.LeftShift)
         {
             Debug.Log("Setting height");
-            state = ToolState.SmoothingHeight;
+            _state = ToolState.SmoothingHeight;
         }
         else if (Event.current.type == EventType.KeyUp && Event.current.keyCode == KeyCode.LeftShift)
         {
-            state = ToolState.None;
+            _state = ToolState.None;
         }
 
         if (Event.current.type == EventType.ScrollWheel)
         {
-            brushSize += -Event.current.delta.y * 0.1f;
-            brushSize = Mathf.Clamp(brushSize, 2, 100);
+            _brushSize += -Event.current.delta.y * 0.1f;
+            _brushSize = Mathf.Clamp(_brushSize, 2, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
 
 
-        chunkPos = new Vector2Int(
-            Mathf.FloorToInt(mousePosition.x / totalTerrainSize.x),
-            Mathf.FloorToInt(mousePosition.z / totalTerrainSize.z)
+        _chunkPos = new Vector2Int(
+            Mathf.FloorToInt(_mousePosition.x / _totalTerrainSize.x),
+            Mathf.FloorToInt(_mousePosition.z / _totalTerrainSize.z)
         );
 
-        if(state == ToolState.SelectingCells)
+        if(_state == ToolState.SelectingCells)
         {
-            for (int y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+            for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
             {
-                for (int x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+                for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
                 {
                     Vector3 p = new Vector3(x, 0, y);
-                    Vector3 mouseOffset = mousePosition + p;
+                    Vector3 mouseOffset = _mousePosition + p;
                     //Snap to cell size
                     Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
-                    bool insideRadius = Vector3.Distance(mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= brushSize / 2;
+                    bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= _brushSize / 2;
 
-                    if (insideRadius && !selectedCells.Contains(cellWorld))
+                    if (insideRadius && !_selectedCells.Contains(cellWorld))
                     {
-                        selectedCells.Add(cellWorld);
+                        _selectedCells.Add(cellWorld);
                     }
                 }
             }
         }
 
 
-        cellPosWorld = mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);
+        _cellPosWorld = _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);
 
         //Get cell pos (0 - dimensions.x, 0 - dimensions.z)
-        if (t.chunks.ContainsKey(chunkPos))
+        if (t.chunks.ContainsKey(_chunkPos))
         {
-            cellPos = new Vector2Int(
-                Mathf.FloorToInt((cellPosWorld.x - t.chunks[chunkPos].transform.position.x) / t.cellSize.x),
-                Mathf.FloorToInt((cellPosWorld.z - t.chunks[chunkPos].transform.position.z) / t.cellSize.y)
+            _cellPos = new Vector2Int(
+                Mathf.FloorToInt((_cellPosWorld.x - t.chunks[_chunkPos].transform.position.x) / t.cellSize.x),
+                Mathf.FloorToInt((_cellPosWorld.z - t.chunks[_chunkPos].transform.position.z) / t.cellSize.y)
             );
-            if (state== ToolState.SelectingCells || state == ToolState.None)
+            if (_state== ToolState.SelectingCells || _state == ToolState.None)
             {
-                hoveredCellHeight = t.chunks[chunkPos].heightMap[t.chunks[chunkPos].GetIndex(cellPos.y, cellPos.x)];
+                _hoveredCellHeight = t.chunks[_chunkPos].heightMap[t.chunks[_chunkPos].GetIndex(_cellPos.y, _cellPos.x)];
             }
         }
     }

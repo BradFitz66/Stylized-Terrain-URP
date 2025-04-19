@@ -7,7 +7,7 @@ public class TerrainTool : ScriptableObject
 {
     public MarchingSquaresTerrain t;
 
-    public SerializedObject serializedT;
+    public SerializedObject SerializedT;
     public virtual void Update() { }
 
     public virtual void OnMouseDown(int button = 0) { }
