@@ -126,7 +126,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public Texture2D[] groundTextures = new Texture2D[4];
     public NoiseSettings noiseSettings;
     public Texture2D heightMap;
-
+    
     public int selectedTool;
     public TerrainTool[] tools;
     public TerrainTool currentTool;

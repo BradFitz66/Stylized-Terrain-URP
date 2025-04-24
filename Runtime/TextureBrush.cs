@@ -106,7 +106,7 @@ public class TextureBrush : TerrainTool
     }
     public override void Update()
     {
-        _selectedCells.Clear();
+        _selectedCells?.Clear();
 
         if (Event.current.type == EventType.ScrollWheel)
         {

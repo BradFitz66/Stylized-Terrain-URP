@@ -50,6 +50,7 @@ public class MarchingSquaresTerrainEditor : Editor
         _instancingData = serializedObject.FindProperty("instancingData");
         _heightMapTexture = serializedObject.FindProperty("heightMap");
 
+        
 
 
         if (_tools.arraySize != 4)
@@ -99,6 +100,7 @@ public class MarchingSquaresTerrainEditor : Editor
             EditorGUI.indentLevel++;
             EditorGUILayout.LabelField("If heightmap is set, noise settings will be ignored other than scale (scale will be used as a height multiplier)");
             EditorGUILayout.PropertyField(_heightMapTexture);
+            
             if (GUILayout.Button("Generate terrain"))
             {
                 t.GenerateTerrain();
@@ -116,7 +118,6 @@ public class MarchingSquaresTerrainEditor : Editor
                 var detailTool = _tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
                 t.GenerateGrass(detailTool.size, detailTool.normalOffset);
             }
-            
         }
         EditorGUILayout.PropertyField(_heightBanding);
         EditorGUILayout.PropertyField(_detailDensity);
