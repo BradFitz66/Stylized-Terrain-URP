@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Kitbashery.MeshCombiner;
+using NUnit.Framework.Internal.Commands;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -65,6 +66,15 @@ public struct CloudSettings : IEquatable<CloudSettings>
 }
 
 
+[System.Flags]
+public enum GrassVertexColorMask
+{
+    None = 0,
+    Red = 1 << 0,
+    Green = 1 << 1,
+    Blue = 1 << 2,
+    Alpha = 1 << 3,
+}
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
@@ -91,6 +101,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     private int[] _triCache;
     private Vector3[] _normCache;
+    private Vector3[] _vertCache;
+    private Color[] _colorCache;
+
     
     private CloudSettings _lastCloudSettings;
 
@@ -140,6 +153,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public float detailDensity = 0.1f; //Minimum distance between details
     public float currentDetailDensity = 0.1f;
 
+    public GrassVertexColorMask grassVertexColorMask;
+
+    
     [FormerlySerializedAs("GUID")] public string guid;
 
 
@@ -269,7 +285,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         foreach (var chunk in chunks)
         {
-            UpdateDetailHeight(chunk.Value);
+            UpdateDetailHeight(chunk.Value, true);
         }
 
 #if UNITY_EDITOR
@@ -339,7 +355,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (data.Length == 0)
             return;
 
-        print("Updating detail buffer");
 
         if (_detailBuffer == null)
             _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf(typeof(DetailObject)));
@@ -361,9 +376,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         _numVoteThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
         _numGroupScanThreadGroups = Mathf.CeilToInt(data.Length / 1024.0f);
-
-        print("Updating detail buffer");
-
+        
         _detailBuffer.SetData(
             data,
             0,
@@ -433,7 +446,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         if (!instancingData.detailChunks.ContainsKey(c.chunkPosition))
             instancingData.detailChunks.Add(c.chunkPosition, new List<DetailObject>());
-
         instancingData.detailChunks[c.chunkPosition].Add(detailObject);
 
 #if UNITY_EDITOR
@@ -443,7 +455,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDetailHeight(c);
     }
 
-    void UpdateDetailHeight(MarchingSquaresChunk chunk)
+    void UpdateDetailHeight(MarchingSquaresChunk chunk, bool checkColors = false)
     {
         if (instancingData == null)
         {
@@ -503,6 +515,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             {
                 _normCache = GetComponent<MeshFilter>().sharedMesh.normals;
                 _triCache = GetComponent<MeshFilter>().sharedMesh.triangles;
+                _vertCache = GetComponent<MeshFilter>().sharedMesh.vertices;
+                _colorCache = GetComponent<MeshFilter>().sharedMesh.colors;
             }
 
             DetailObject d = instancingData.detailChunks[chunkPos][index];
@@ -525,27 +539,53 @@ public class MarchingSquaresTerrain : MonoBehaviour
             int tri1 = _triCache[triIdx1];
             int tri2 = _triCache[triIdx2];
             int tri3 = _triCache[triIdx3];
-
-
+            
             Vector3 n0 = _normCache[tri1];
             Vector3 n1 = _normCache[tri2];
             Vector3 n2 = _normCache[tri3];
-
+            
+            Color c0 = _colorCache[tri1];
+            Color c1 = _colorCache[tri2];
+            Color c2 = _colorCache[tri3];
+            
             var baryCenter = hit.barycentricCoordinate;
             var interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
-
-            interpolatedNormal = interpolatedNormal.normalized;
-            interpolatedNormal = hit.transform.TransformDirection(interpolatedNormal);
-            var trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
-
-            newDetailList.Add(new DetailObject()
+            bool canPlace = true;
+            if (checkColors)
             {
-                trs = trs,
-                normal = interpolatedNormal,
-                normalOffset = d.normalOffset
-            });
+
+                var avgColor = (c0 + c1 + c2) / 3;
+                switch (grassVertexColorMask)
+                {
+                    case GrassVertexColorMask.Red:
+                        canPlace = avgColor.r > 0.5f;
+                        break;
+                    case GrassVertexColorMask.Green:
+                        canPlace = avgColor.g > 0.5f;
+                        break;
+                    case GrassVertexColorMask.Blue:
+                        canPlace = avgColor.b > 0.5f;
+                        break;
+                    case GrassVertexColorMask.Alpha:
+                        canPlace = avgColor.a > 0.5f;
+                        break;
+                }
+            }
 
 
+            if (canPlace)
+            {
+                interpolatedNormal = interpolatedNormal.normalized;
+                interpolatedNormal = hit.transform.TransformDirection(interpolatedNormal);
+                var trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+                newDetailList.Add(new DetailObject()
+                {
+                    trs = trs,
+                    normal = interpolatedNormal,
+                    normalOffset = d.normalOffset
+                });
+            }
+            
             index++;
         }
 
@@ -884,7 +924,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         {
             foreach (var chunk in toUpdate)
             {
-                print("1");
+                UpdateDetailHeight(chunk);
                 UpdateDetailHeight(chunk);
             }
         }
@@ -919,10 +959,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         _triCache = mesh.triangles;
         _normCache = mesh.normals;
+        _vertCache = mesh.vertices;
+        _colorCache = mesh.colors;
     }
     internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool smooth = false)
     {
-        print("Drawing heights");
         foreach (Vector3 worldCell in worldCellPositions)
         {
             var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);

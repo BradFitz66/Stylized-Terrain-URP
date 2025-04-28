@@ -24,6 +24,8 @@ public class MarchingSquaresTerrainEditor : Editor
     private SerializedProperty _cloudSettings;
     private SerializedProperty _instancingData;
     private SerializedProperty _heightMapTexture;
+    private SerializedProperty _grassVertexColorMask;
+    private SerializedProperty _detailMaterial;
 
     private SerializedProperty _lastTool;
     private SerializedProperty _currentTool;
@@ -49,6 +51,9 @@ public class MarchingSquaresTerrainEditor : Editor
         _cloudSettings = serializedObject.FindProperty("cloudSettings");
         _instancingData = serializedObject.FindProperty("instancingData");
         _heightMapTexture = serializedObject.FindProperty("heightMap");
+        _grassVertexColorMask = serializedObject.FindProperty("grassVertexColorMask");
+        _detailMaterial = serializedObject.FindProperty("detailMaterial");
+        
 
         
 
@@ -113,6 +118,7 @@ public class MarchingSquaresTerrainEditor : Editor
         
         if (_showGenerateGrassSettings)
         {
+            EditorGUILayout.PropertyField(_grassVertexColorMask);
             if (GUILayout.Button("Generate grass"))
             {
                 var detailTool = _tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
@@ -121,6 +127,7 @@ public class MarchingSquaresTerrainEditor : Editor
         }
         EditorGUILayout.PropertyField(_heightBanding);
         EditorGUILayout.PropertyField(_detailDensity);
+        EditorGUILayout.PropertyField(_detailMaterial);
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Cloud settings", EditorStyles.boldLabel);

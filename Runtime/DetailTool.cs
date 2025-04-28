@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using UnityEngine.Serialization;
 
 enum Mode
 {
@@ -24,7 +25,7 @@ public class DetailTool : TerrainTool
     private Mode _mode = Mode.Add;
 
     public float hoveredCellHeight = 0;
-    public float brushSize = 2;
+    [FormerlySerializedAs("brushSize")] private float _brushSize = 2;
     public float normalOffset = 0.5f;
     public float size = 1;
 
@@ -35,8 +36,10 @@ public class DetailTool : TerrainTool
     {
 
         Handles.color = Color.green;
-        Handles.DrawSolidDisc(_mousePosition + Vector3.up * hoveredCellHeight, Vector3.up, brushSize / 2);
-
+        Handles.DrawSolidDisc(_mousePosition + Vector3.up * hoveredCellHeight, Vector3.up, _brushSize / 2);
+        Handles.color = Color.white;
+        Handles.DrawSolidDisc(mouseOffset + Vector3.up * (hoveredCellHeight+.01f), Vector3.up, 1);
+        
 
         //Draw wire around hovered chunk
         if (t.chunks.ContainsKey(_chunkPos))
@@ -76,13 +79,13 @@ public class DetailTool : TerrainTool
     public override void ToolSelected()
     {
         normalOffset = EditorPrefs.GetFloat("NormalOffset", 0.5f);
-        brushSize = EditorPrefs.GetFloat("BrushSize", 2);
+        _brushSize = EditorPrefs.GetFloat("BrushSize", 2);
         size = EditorPrefs.GetFloat("Size", 1);
     }
 
     public override void ToolDeselected()
     {
-        EditorPrefs.SetFloat("BrushSize", brushSize);
+        EditorPrefs.SetFloat("BrushSize", _brushSize);
         EditorPrefs.SetFloat("NormalOffset", normalOffset);
         EditorPrefs.SetFloat("Size", size);
 
@@ -107,6 +110,7 @@ public class DetailTool : TerrainTool
         SerializedT.ApplyModifiedProperties();
     }
 
+    private Vector3 mouseOffset;
     public override void Update()
     {
         _totalTerrainSize = new Vector3(
@@ -123,8 +127,8 @@ public class DetailTool : TerrainTool
 
         if (Event.current.type == EventType.ScrollWheel)
         {
-            brushSize += -Event.current.delta.y * 0.1f;
-            brushSize = Mathf.Clamp(brushSize, 2, 100);
+            _brushSize += -Event.current.delta.y * 0.1f;
+            _brushSize = Mathf.Clamp(_brushSize, 2, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
@@ -140,12 +144,32 @@ public class DetailTool : TerrainTool
         {
             if (_mode == Mode.Add)
             {
-                for (var y = -Mathf.FloorToInt(brushSize / 2); y <= Mathf.FloorToInt(brushSize / 2); y++)
+                // for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
+                // {
+                //     for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
+                //     {
+                //         Vector3 p = new Vector3(x, 0, y);
+                //         Vector3 mouseOffset = _mousePosition + p;
+                //         Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
+                //
+                //
+                //         bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
+                //
+                //         List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
+                //
+                //         if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
+                //         {
+                //             _selectedCells.Add(cellWorld);
+                //         }
+                //     }
+                // }
+
+                for (var y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
                 {
-                    for (var x = -Mathf.FloorToInt(brushSize / 2); x <= Mathf.FloorToInt(brushSize / 2); x++)
+                    for (var x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
                     {
                         var p = new Vector3(x, 0, y);
-                        var mouseOffset = _mousePosition + p;
+                        mouseOffset = _mousePosition + p/2;
 
                         //Get chunk position at mouseOffset
                         var chunk = new Vector2Int(
@@ -153,10 +177,12 @@ public class DetailTool : TerrainTool
                             Mathf.FloorToInt(mouseOffset.z / _totalTerrainSize.z)
                         );
 
-                        var insideRadius = Vector3.Distance(_mousePosition, mouseOffset) <= brushSize / 2;
+                        var insideRadius = Vector3.Distance(_mousePosition, mouseOffset) <= _brushSize / 2;
                         if (!t.chunks.ContainsKey(chunk) || !insideRadius)
+                        {
                             return;
-
+                        }
+                        
                         var c = t.chunks[chunk];
                         t.AddDetail(size, normalOffset, mouseOffset, c);
                         
@@ -165,7 +191,7 @@ public class DetailTool : TerrainTool
             }
             else
             {
-                t.RemoveDetail(brushSize, _mousePosition);
+                t.RemoveDetail(_brushSize, _mousePosition);
             }
 
         }
