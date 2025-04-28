@@ -126,7 +126,18 @@ public class MarchingSquaresTerrainEditor : Editor
             }
         }
         EditorGUILayout.PropertyField(_heightBanding);
+        EditorGUILayout.BeginHorizontal();
         EditorGUILayout.PropertyField(_detailDensity);
+        if (GUILayout.Button("Apply detail density"))
+        {
+            //Popup window telling user that this will erase all detail
+            if (EditorUtility.DisplayDialog("Apply detail density", "This will erase all details on the terrain", "Ok", "Cancel"))
+            {
+                t.UpdateDensity();
+            }
+        }
+        EditorGUILayout.EndHorizontal();
+        
         EditorGUILayout.PropertyField(_detailMaterial);
 
         EditorGUILayout.Space();
@@ -137,14 +148,6 @@ public class MarchingSquaresTerrainEditor : Editor
         if (GUILayout.Button("Clear details"))
         {
             t.ClearDetails();
-        }
-        if (GUILayout.Button("Apply detail density"))
-        {
-            //Popup window telling user that this will erase all detail
-            if (EditorUtility.DisplayDialog("Apply detail density", "This will erase all details on the terrain", "Ok", "Cancel"))
-            {
-                t.UpdateDensity();
-            }
         }
 
 

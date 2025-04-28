@@ -60,6 +60,7 @@ public class TextureBrush : TerrainTool
     public override void ToolSelected()
     {
         _selectedCells = new List<Vector3>();
+        _labelStyle = new GUIStyle();
         if (layers == null || layers.Length < 4)
             layers = new Texture2D[4];
 
