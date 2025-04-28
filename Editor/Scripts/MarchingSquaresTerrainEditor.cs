@@ -36,6 +36,7 @@ public class MarchingSquaresTerrainEditor : Editor
     private bool _showGenerateGrassSettings;
     public void OnEnable()
     {
+        _showGenerateGrassSettings = EditorPrefs.GetBool("ShowGenerateGrassSettings", true);
         t = (MarchingSquaresTerrain)target;
         _terrainDimensions = serializedObject.FindProperty("dimensions");
         _mergeThreshold = serializedObject.FindProperty("mergeThreshold");
@@ -179,7 +180,8 @@ public class MarchingSquaresTerrainEditor : Editor
         }
 
         serializedObject.ApplyModifiedProperties();
-        //serializedObject.Update();
+        EditorPrefs.SetBool("ShowGenerateGrassSettings", true);
+
     }
 
 
