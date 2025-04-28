@@ -172,8 +172,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
     private void Awake()
     {
         CreateOrLoadInstanceData();
-        _useCulling = !(Application.isEditor && !Application.isPlaying);
+        //_useCulling = !(Application.isEditor && !Application.isPlaying);
+        _shader = Resources.Load<ComputeShader>("Shaders/Culling");
+
         UpdateDetailBuffer();
+        
+        _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
     }
 
     private void OnEnable()
@@ -181,7 +189,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         CreateOrLoadInstanceData();
 
-        _useCulling = !(Application.isEditor && !Application.isPlaying);
+        //_useCulling = !(Application.isEditor && !Application.isPlaying);
         _shader = Resources.Load<ComputeShader>("Shaders/Culling");
 
         UpdateDetailBuffer();
@@ -232,13 +240,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
             UpdateClouds();
         }
 
-        if (_camera != null && _useCulling)
-            Dispatch(transform.position, _camera.transform.position, _camera.projectionMatrix * _camera.worldToCameraMatrix);
+        // if (_camera != null && _useCulling)
+        //     Dispatch(transform.position, _camera.transform.position, _camera.projectionMatrix * _camera.worldToCameraMatrix);
 
         Graphics.DrawMeshInstancedIndirect(
             detailMesh, 0, detailMaterial,
             new Bounds(Vector3.zero, new Vector3(10000, 10000, 10000)),
-            bufferWithArgs: _argsBuffer, argsOffset: 0, properties: _mpb
+            bufferWithArgs: _argsBuffer, properties: _mpb
         );
     }
 #endregion
@@ -312,7 +320,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (_detailBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null || _scannedGroupSumBuffer == null || _resultBuffer == null)
         {
             var data = instancingData.GetDetailData();
-            _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>()); //Preallocate 1million details
+            _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>());
             _voteBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
             _scanBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
             _groupSumArrayBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
@@ -345,8 +353,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         if (_argsBuffer == null)
             InitializeBuffers();
-
-        _args[1] = (uint)data.Length;
+        
+        if (!_useCulling)
+            _args[1] = (uint)data.Length;
+        
         _argsBuffer.SetData(_args);
 
         if (_mpb == null)
@@ -354,7 +364,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         if (data.Length == 0)
             return;
-
 
         if (_detailBuffer == null)
             _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf(typeof(DetailObject)));
@@ -383,7 +392,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
             0,
             data.Length
         );
-
         _mpb?.SetBuffer("_TerrainDetail", _useCulling ? _resultBuffer : _detailBuffer);
     }
     public void AddDetail(float size, float normalOffset, float3 detailPos, MarchingSquaresChunk chunk, bool distanceCheck = true)

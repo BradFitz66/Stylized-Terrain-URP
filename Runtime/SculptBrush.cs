@@ -44,7 +44,8 @@ public class SculptBrush : TerrainTool
     public override void ToolSelected()
     {
         _setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
-
+		_smoothingCells = new List<Vector3>();
+        _selectedCells = new List<Vector3>();
     }
 
 
@@ -212,7 +213,6 @@ public class SculptBrush : TerrainTool
         //Save setHeight
         EditorPrefs.SetFloat("setHeight_SCULPTBRUSH", _setHeight);
     }
-
     public override void Update()
     {
         if(_selectedCells == null)
