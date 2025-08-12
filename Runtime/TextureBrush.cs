@@ -113,7 +113,7 @@ public class TextureBrush : TerrainTool
         if (Event.current.type == EventType.ScrollWheel)
         {
             _brushSize += -Event.current.delta.y * 0.1f;
-            _brushSize = Mathf.Clamp(_brushSize, 1, 100);
+            _brushSize = Mathf.Clamp(_brushSize, t.cellSize.Length, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
