@@ -246,7 +246,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Graphics.DrawMeshInstancedIndirect(
             detailMesh, 0, detailMaterial,
             new Bounds(Vector3.zero, new Vector3(10000, 10000, 10000)),
-            bufferWithArgs: _argsBuffer, properties: _mpb
+            bufferWithArgs: _argsBuffer, properties: _mpb, castShadows: ShadowCastingMode.Off
         );
     }
 #endregion
