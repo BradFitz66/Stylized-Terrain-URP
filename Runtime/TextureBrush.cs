@@ -76,17 +76,13 @@ public class TextureBrush : TerrainTool
 
     void UpdateMaterialLayers(Texture2D[] l)
     {
-        foreach (MarchingSquaresChunk chunk in t.chunks.Values)
+        foreach (Material mat in t.GetComponent<MeshRenderer>().sharedMaterials)
         {
-            foreach (Material mat in chunk.GetComponent<MeshRenderer>().sharedMaterials)
-            {
-                mat.SetTexture("_Ground1", layers[0]);
-                mat.SetTexture("_Ground2", layers[1]);
-                mat.SetTexture("_Ground3", layers[2]);
-                mat.SetTexture("_Ground4", layers[3]);
-            }
+            mat.SetTexture("_Ground1", layers[0]);
+            mat.SetTexture("_Ground2", layers[1]);
+            mat.SetTexture("_Ground3", layers[2]);
+            mat.SetTexture("_Ground4", layers[3]);
         }
-
     }
 
     public override void ToolDeselected()
@@ -185,6 +181,7 @@ public class TextureBrush : TerrainTool
 
     public override void OnInspectorGUI()
     {
+        base.OnInspectorGUI();
         EditorGUILayout.LabelField("Brush Size: " + _brushSize);
         EditorGUILayout.LabelField("Hold shift to enable falloff");
 

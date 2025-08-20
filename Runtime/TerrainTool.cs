@@ -22,6 +22,10 @@ public class TerrainTool : ScriptableObject
 
     public virtual void OnInspectorGUI() 
     {
+        if (t == null)
+            return;
+        
+        EditorGUILayout.LabelField("----- Tool settings -----");
     }
 
     public virtual void ToolSelected()

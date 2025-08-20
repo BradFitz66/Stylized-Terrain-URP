@@ -16,6 +16,12 @@ public class ChunkBrush : TerrainTool
         Handles.color = _canPlace ? Color.green : Color.red;
         Handles.DrawWireCube(_snappedMousePosition, _totalTerrainSize);
     }
+
+    public override void OnInspectorGUI()
+    {
+        base.OnInspectorGUI();
+    }
+
     public override void OnMouseDown(int button = 0)
     {
         if (button != 0)
@@ -37,6 +43,9 @@ public class ChunkBrush : TerrainTool
     public override void OnMouseUp(int button = 0)
     {
     }
+    
+    
+    
     public override void Update()
     {
         _totalTerrainSize = new Vector3(

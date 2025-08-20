@@ -119,12 +119,15 @@ public class MarchingSquaresTerrainEditor : Editor
         
         if (_showGenerateGrassSettings)
         {
+            EditorGUI.indentLevel++;
             EditorGUILayout.PropertyField(_grassVertexColorMask);
             if (GUILayout.Button("Generate grass"))
             {
                 var detailTool = _tools.GetArrayElementAtIndex(3).objectReferenceValue as DetailTool;
                 t.GenerateGrass(detailTool.size, detailTool.normalOffset);
             }
+
+            EditorGUI.indentLevel--;
         }
         EditorGUILayout.PropertyField(_heightBanding);
         EditorGUILayout.BeginHorizontal();

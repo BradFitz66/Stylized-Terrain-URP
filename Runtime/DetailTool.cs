@@ -93,6 +93,7 @@ public class DetailTool : TerrainTool
     
     public override void OnInspectorGUI()
     {
+        base.OnInspectorGUI();
         normalOffset = EditorGUILayout.FloatField("Normal Offset", normalOffset);
         size = EditorGUILayout.FloatField("Size", size);
 

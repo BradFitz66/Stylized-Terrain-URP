@@ -960,6 +960,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         Mesh mesh = new Mesh();
         mesh.CombineMeshes(combine);
+#if UNITY_EDITOR
+        mesh.RecalculateNormals(45.0f);
+        mesh.Optimize();
+#endif
 
         transform.GetComponent<MeshFilter>().sharedMesh = mesh;
         transform.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
@@ -970,7 +974,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _vertCache = mesh.vertices;
         _colorCache = mesh.colors;
     }
-    internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool smooth = false)
+    internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool smooth = false, bool flatten = false, float _selectedHeight = 0)
     {
         foreach (Vector3 worldCell in worldCellPositions)
         {
@@ -981,7 +985,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
                     Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
                     Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
                 );
-                chunk.DrawHeight(localPos.x, localPos.y, dragHeight, setHeight);
+                float finalHeight = flatten ? _selectedHeight + dragHeight : dragHeight;
+                chunk.DrawHeight(localPos.x, localPos.y, dragHeight, setHeight || flatten);
             }
         }
 
@@ -1181,6 +1186,20 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Shader.SetGlobalFloat("_CloudBrightness", cloudSettings.brightness);
         Shader.SetGlobalFloat("_CloudVerticalSpeed", cloudSettings.speed.z);
     }
+    public float GetHeightAtWorldPosition(Vector3 cellWorld)
+    {
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(cellWorld);
+        foreach (var chunk in chunksAtWorldPosition)
+        {
+            //Get the local cell position
+            var localCellPos = new Vector2Int(
+                Mathf.FloorToInt((cellWorld.x - chunk.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((cellWorld.z - chunk.transform.position.z) / cellSize.y)
+            );
+            return chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+        }
+        return 0;
+    }
     void CreateOrLoadInstanceData()
     {
         if (instancingData == null)
@@ -1199,4 +1218,5 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #endif
     }
 #endregion
+
 }

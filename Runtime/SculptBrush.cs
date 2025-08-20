@@ -21,6 +21,9 @@ public class SculptBrush : TerrainTool
     private float _dragHeight;
     private float _hoveredCellHeight;
     private float _brushSize = 2;
+    private float _selectedHeight;
+    private float _selectedHeightThreshold = 0.1f;
+    private bool _selectedHeightOnly;
 
     //cell world position, chunkPos
     private List<Vector3> _selectedCells;
@@ -119,6 +122,7 @@ public class SculptBrush : TerrainTool
             {
                 case ToolState.None:       
                     _state = ToolState.SelectingCells;
+                    _selectedHeight = _hoveredCellHeight;
                     break;
                 case ToolState.SelectedCells:
                     _state = ToolState.DraggingHeight;
@@ -192,7 +196,8 @@ public class SculptBrush : TerrainTool
                     _state = ToolState.None;
                 break;
             case ToolState.DraggingHeight:
-                t.DrawHeights(_selectedCells, _dragHeight, false);
+                Debug.Log("Dragging height: " + _selectedHeight);
+                t.DrawHeights(_selectedCells, _dragHeight, _flattenGeometry, false, _flattenGeometry, _selectedHeight);
                 _dragHeight = 0;
                 _state = ToolState.None;
                 break;
@@ -204,10 +209,20 @@ public class SculptBrush : TerrainTool
         _mouseDown = false;
     }
 
-    private GUIContent _flattenLabel = new GUIContent("Flatten Geometry","Averages the height of manipulated geometry so it'll all be at the same height");
+    private GUIContent _flattenLabel = new GUIContent("Flatten Geometry","Averages the final height of selected cells to ensure they're flat");
+    private GUIContent _selectedHeightThresholdLabel = new GUIContent("Selected Height Threshold", "The threshold for selecting heights. If the difference between the first cell that was clicked on and the height of the cell currently being selected is greater than this value, the cell will not be selected.");
+    private GUIContent _selectedHeightOnlyLabel = new GUIContent("Selected Height Only", "Only select cells with a similar height to the height of the cell that was first clicked on.");
     public override void OnInspectorGUI()
     {
+        base.OnInspectorGUI();
         _flattenGeometry = EditorGUILayout.Toggle(_flattenLabel, _flattenGeometry);
+        _selectedHeightOnly = EditorGUILayout.Toggle(_selectedHeightOnlyLabel, _selectedHeightOnly);
+        if (_selectedHeightOnly)
+        {
+            EditorGUI.indentLevel++;
+            _selectedHeightThreshold = EditorGUILayout.FloatField(_selectedHeightThresholdLabel, _selectedHeightThreshold);
+            EditorGUI.indentLevel--;
+        }
         _setHeight = EditorGUILayout.FloatField("Set Height", _setHeight);
 
         //Save setHeight
@@ -268,11 +283,14 @@ public class SculptBrush : TerrainTool
                     Vector3 mouseOffset = _mousePosition + p;
                     //Snap to cell size
                     Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-
+                    float height = t.GetHeightAtWorldPosition(cellWorld);
                     bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= _brushSize / 2;
 
                     if (insideRadius && !_selectedCells.Contains(cellWorld))
                     {
+                        if (_selectedHeightOnly && Mathf.Abs(height - _selectedHeight) > _selectedHeightThreshold)
+                            continue;
+                        
                         _selectedCells.Add(cellWorld);
                     }
                 }

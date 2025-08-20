@@ -4,6 +4,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using Unity.Burst;
+using UnityEditor;
 using UnityEngine.Serialization;
 
 //Job to generate the mesh for this chunk
@@ -1009,10 +1010,10 @@ public class MarchingSquaresChunk : MonoBehaviour
 
             //Mesh data
             Vertices = new NativeList<float3>(0, Allocator.Persistent),
-            Colors = new NativeList<float4>(0, Allocator.Persistent),
-            Uvs = new NativeList<float2>(0, Allocator.Persistent),
-            Triangles = new NativeList<int>(0, Allocator.Persistent),
-            Normals = new NativeList<float3>(0, Allocator.Persistent),
+            Colors = new NativeList<float4>(  0, Allocator.Persistent),
+            Uvs = new NativeList<float2>(     0, Allocator.Persistent),
+            Triangles = new NativeList<int>(  0, Allocator.Persistent),
+            Normals = new NativeList<float3>( 0, Allocator.Persistent),
 
             CellEdges = new NativeArray<bool>(new bool[4] { false, false, false, false }, Allocator.Persistent),
             PointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
@@ -1056,8 +1057,6 @@ public class MarchingSquaresChunk : MonoBehaviour
         mesh.SetColors<float4>(_colors);
         mesh.SetIndices(_triangles, MeshTopology.Triangles, 0);
         mesh.SetUVs<float2>(0, _uvs);
-        mesh.Optimize();
-        mesh.RecalculateNormals(45);
 
         job.Vertices.Dispose();
         job.Colors.Dispose();
@@ -1121,7 +1120,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         //Within bounds?
         if (!InBounds(z, x))
             return;
-
+        Debug.Log("Setting height: " + y);
         heightMap[GetIndex(z, x)] = setHeight ? y : heightMap[GetIndex(z, x)] + y;
         isDirty = true;
     }
