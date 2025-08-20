@@ -253,6 +253,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #region Detail Functions
     public void GenerateGrass(float size, float normalOffset)
     {
+        print("!");
         //Sanity checking to ensure instancingData is never null when doing stuff related to detail.
         if (instancingData == null)
         {
@@ -1202,8 +1203,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
     void CreateOrLoadInstanceData()
     {
-        if (instancingData == null)
-            return;
         if (Resources.Load<InstancingData>("InstancingData" + guid) != null)
         {
             print("Loading instancing data");

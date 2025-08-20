@@ -96,6 +96,7 @@ public class DetailTool : TerrainTool
         base.OnInspectorGUI();
         normalOffset = EditorGUILayout.FloatField("Normal Offset", normalOffset);
         size = EditorGUILayout.FloatField("Size", size);
+		t.detailMesh = (Mesh)EditorGUILayout.ObjectField("Detail Mesh", t.detailMesh, typeof(Mesh), false);
 
         //Draw toolbar for mode selection
         GUILayout.BeginHorizontal();
