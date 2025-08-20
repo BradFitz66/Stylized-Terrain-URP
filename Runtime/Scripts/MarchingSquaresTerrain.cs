@@ -11,6 +11,8 @@ using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Serialization;
+using UnityEngine.Rendering;
+
 
 // ReSharper disable All
 
