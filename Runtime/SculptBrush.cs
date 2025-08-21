@@ -262,7 +262,7 @@ public class SculptBrush : TerrainTool
         if (Event.current.type == EventType.ScrollWheel)
         {
             _brushSize += -Event.current.delta.y * 0.1f;
-            _brushSize = Mathf.Clamp(_brushSize, t.cellSize.magnitude, 100);
+            _brushSize = Mathf.Clamp(_brushSize, 1, 100);
             //Eat the event to prevent zooming in the scene view
             Event.current.Use();
         }
