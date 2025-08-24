@@ -10,6 +10,8 @@ public class SculptBrush : TerrainTool
     private Vector3 _mousePosition;
     private Vector3 _cellPosWorld;
     private Vector3 _totalTerrainSize;
+    private Vector3 _slopePoint1;
+    private Vector3 _slopePoint2;
 
     private Vector2Int _cellPos;
     private Vector2Int _chunkPos;
@@ -24,6 +26,7 @@ public class SculptBrush : TerrainTool
     private float _selectedHeight;
     private float _selectedHeightThreshold = 0.1f;
     private bool _selectedHeightOnly;
+    
 
     //cell world position, chunkPos
     private List<Vector3> _selectedCells;
@@ -37,7 +40,9 @@ public class SculptBrush : TerrainTool
         SmoothingHeight,
         SelectingCells,
         SelectedCells,
-        DraggingHeight
+        DraggingHeight,
+        SelectingSlopePoint1,
+        SelectingSlopePoint2
     }
 
     private ToolState _state = ToolState.None;
@@ -111,6 +116,15 @@ public class SculptBrush : TerrainTool
             case ToolState.SmoothingHeight:
                 Handles.Label(_mousePosition + Vector3.up * 2, "Smoothing Height",_style);
                 break;
+            case ToolState.SelectingSlopePoint1:
+                Handles.Label(_mousePosition + Vector3.up * 2, "Selecting Slope Point 1",_style);
+                break;
+            case ToolState.SelectingSlopePoint2:
+                Handles.Label(_mousePosition + Vector3.up * 2, "Selecting Slope Point 2",_style);
+                Handles.color = Color.green;
+                Handles.DrawLine(_slopePoint1 + Vector3.up * 0.1f, _cellPosWorld);
+                Handles.color = Color.black;
+                break;
         }
     }
     public override void OnMouseDown(int button = 0)
@@ -124,6 +138,15 @@ public class SculptBrush : TerrainTool
                     _state = ToolState.SelectingCells;
                     _selectedHeight = _hoveredCellHeight;
                     break;
+                case ToolState.SelectingSlopePoint1:
+                    _slopePoint1 = _cellPosWorld;
+                    _state = ToolState.SelectingSlopePoint2;
+                    break;
+                case ToolState.SelectingSlopePoint2:
+                    _slopePoint2 = _cellPosWorld;
+                    _state = ToolState.None;
+                    GenerateSlope();
+                    break;
                 case ToolState.SelectedCells:
                     _state = ToolState.DraggingHeight;
                     break;
@@ -133,6 +156,58 @@ public class SculptBrush : TerrainTool
             }
         }
     }
+
+    private void GenerateSlope()
+    {
+        //Get world position of slope points
+        
+        
+        float height1 = t.GetHeightAtWorldPosition(_slopePoint1);
+        float height2 = t.GetHeightAtWorldPosition(_slopePoint2);
+        
+        Debug.Log($"Slope point 1: {_slopePoint1}, height: {height1}");
+        Debug.Log($"Slope point 2: {_slopePoint2}, height: {height2}");
+        
+        Vector3 direction = (_slopePoint2 - _slopePoint1).normalized;
+        float distance = Vector3.Distance(_slopePoint1, _slopePoint2);
+        float heightDifference = height2 - height1;
+        int steps = Mathf.CeilToInt(distance / (t.mergeThreshold/2));
+        Vector3 step = direction * (distance / steps);
+        float heightStep = heightDifference / steps;
+        
+        List<Vector3> slopeCells = new List<Vector3>();
+        List<float> slopeHeights = new List<float>();
+        for (int i = 0; i <= steps; i++)
+        {
+            Vector3 pos = _slopePoint1 + step * i;
+            float height = height1 + heightStep * i;
+            // slopeCells.Add(pos.Snap(t.cellSize.x, 1, t.cellSize.y));
+            // slopeHeights.Add(height);
+            //Also add cells in brush size radius
+            for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
+            {
+                for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
+                {
+                    Vector3 p = new Vector3(x, 0, y);
+                    Vector3 mouseOffset = pos + p;
+                    //Snap to cell size
+                    Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
+
+                    bool insideRadius = Vector3.Distance(pos.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= _brushSize / 2;
+
+                    if (insideRadius && !slopeCells.Contains(cellWorld))
+                    {
+                        slopeCells.Add(cellWorld);
+                        slopeHeights.Add(height);
+                    }
+                }
+            }
+        }
+        t.DrawHeights(slopeCells, slopeHeights, true, 0);
+        
+
+    }
+
     public override void OnMouseDrag(Vector2 delta)
     {
         switch(_state)
@@ -196,8 +271,7 @@ public class SculptBrush : TerrainTool
                     _state = ToolState.None;
                 break;
             case ToolState.DraggingHeight:
-                Debug.Log("Dragging height: " + _selectedHeight);
-                t.DrawHeights(_selectedCells, _dragHeight, _flattenGeometry, false, _flattenGeometry, _selectedHeight);
+                t.DrawHeights(_selectedCells, _dragHeight, _flattenGeometry, _flattenGeometry, _selectedHeight);
                 _dragHeight = 0;
                 _state = ToolState.None;
                 break;
@@ -257,6 +331,20 @@ public class SculptBrush : TerrainTool
         else if (Event.current.type == EventType.KeyUp && Event.current.keyCode == KeyCode.LeftShift)
         {
             _state = ToolState.None;
+        }
+        
+        if(Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.LeftControl && _state == ToolState.None)
+        {
+            _state = ToolState.SelectingSlopePoint1;
+            _selectedCells.Clear();
+            _dragHeight = 0;
+            _mouseDown = false;
+        }
+        else if (Event.current.type == EventType.KeyUp && Event.current.keyCode == KeyCode.LeftControl && _state == ToolState.SelectingSlopePoint1)
+        {
+            _state = ToolState.None;
+            _slopePoint1 = Vector3.zero;
+            _slopePoint2 = Vector3.zero;
         }
 
         if (Event.current.type == EventType.ScrollWheel)

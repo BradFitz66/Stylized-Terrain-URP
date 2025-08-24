@@ -5,6 +5,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using Unity.Burst;
 using UnityEditor;
+using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 
 //Job to generate the mesh for this chunk
@@ -940,6 +941,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     public float4[] colorMap;
 
     public bool isDirty;
+    public bool updateNormals;
 
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
@@ -999,9 +1001,8 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public void GenerateTerrainCells()
     {
-
-
-
+		//Mark this area on the profiler
+        Profiler.BeginSample("Chunk Generation");
         GenerateChunkJob job = new GenerateChunkJob()
         {
             //Data
@@ -1032,7 +1033,9 @@ public class MarchingSquaresChunk : MonoBehaviour
         var handle = job.Schedule(totalLoop, terrain.dimensions.x * terrain.dimensions.z);
 
         handle.Complete();
-
+        Profiler.EndSample();
+        
+        Profiler.BeginSample("Chunk Mesh Creation");
         _vertices = job.Vertices.AsArray();
         _colors = job.Colors.AsArray();
         _triangles = job.Triangles.AsArray();
@@ -1063,6 +1066,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         job.Triangles.Dispose();
         job.Uvs.Dispose();
         job.Normals.Dispose();
+        Profiler.EndSample();
 
     }
 
@@ -1108,6 +1112,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             }
 
         isDirty = true;
+        updateNormals = true;
     }
 
     private bool InBounds(int x, int z)
@@ -1120,18 +1125,20 @@ public class MarchingSquaresChunk : MonoBehaviour
         //Within bounds?
         if (!InBounds(z, x))
             return;
-        Debug.Log("Setting height: " + y);
         heightMap[GetIndex(z, x)] = setHeight ? y : heightMap[GetIndex(z, x)] + y;
         isDirty = true;
+        updateNormals = true;
     }
 
 
     public void DrawHeights(List<Vector2Int> positions, float height, bool setHeight, bool smooth)
     {
+        Profiler.BeginSample("Draw Heights");
         for (var i = 0; i < positions.Count; i++)
         {
             if (!InBounds(positions[i].y, positions[i].x))
                 continue;
+            
             if (smooth)
             {
                 heightMap[GetIndex(positions[i].y, positions[i].x)] = Mathf.Lerp(heightMap[GetIndex(positions[i].y, positions[i].x)], height, 0.5f);
@@ -1144,8 +1151,9 @@ public class MarchingSquaresChunk : MonoBehaviour
                     heightMap[GetIndex(positions[i].y, positions[i].x)] += height;
             }
         }
-
+        Profiler.EndSample();
         isDirty = true;
+        updateNormals = true;
     }
 
     public void DrawColor(int x, int z, Color color)
@@ -1154,6 +1162,7 @@ public class MarchingSquaresChunk : MonoBehaviour
             return;
         colorMap[GetIndex(x, z)] = color.ToFloat4();
         isDirty = true;
+        updateNormals = false;
     }
 
     internal void DrawColors(List<Vector2Int> value, Color color)
@@ -1165,5 +1174,6 @@ public class MarchingSquaresChunk : MonoBehaviour
             colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color.ToFloat4();
         }
         isDirty = true;
+        updateNormals = false;
     }
 }

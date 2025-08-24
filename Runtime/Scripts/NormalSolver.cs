@@ -16,10 +16,15 @@
 
 using System;
 using System.Collections.Generic;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 using UnityEngine;
 
 public static class NormalSolver
 {
+    
     /// <summary>
     ///     Recalculate the normals of a mesh based on an angle threshold. This takes
     ///     into account distinct vertices that have the same position.
@@ -31,7 +36,7 @@ public static class NormalSolver
     /// </param>
     public static void RecalculateNormals(this Mesh mesh, float angle)
     {
-        var cosineThreshold = Mathf.Cos(angle * Mathf.Deg2Rad);
+        var cosineThreshold = math.cos(angle * Mathf.Deg2Rad);
 
         var vertices = mesh.vertices;
         var normals = new Vector3[vertices.Length];
@@ -55,9 +60,9 @@ public static class NormalSolver
                 int i3 = triangles[i + 2];
 
                 // Calculate the normal of the triangle
-                Vector3 p1 = vertices[i2] - vertices[i1];
-                Vector3 p2 = vertices[i3] - vertices[i1];
-                Vector3 normal = Vector3.Cross(p1, p2).normalized;
+                float3 p1 = vertices[i2] - vertices[i1];
+                float3 p2 = vertices[i3] - vertices[i1];
+                float3 normal = Vector3.Cross(p1, p2).normalized;
                 int triIndex = i / 3;
                 triNormals[subMeshIndex][triIndex] = normal;
 
@@ -126,7 +131,7 @@ public static class NormalSolver
         mesh.normals = normals;
     }
 
-    private struct VertexKey
+    private struct VertexKey : System.IEquatable<VertexKey>
     {
         private readonly long _x;
         private readonly long _y;
@@ -144,6 +149,11 @@ public static class NormalSolver
             _x = (long)(Mathf.Round(position.x * Tolerance));
             _y = (long)(Mathf.Round(position.y * Tolerance));
             _z = (long)(Mathf.Round(position.z * Tolerance));
+        }
+
+        public bool Equals(VertexKey other)
+        {
+            return _x == other._x && _y == other._y && _z == other._z;
         }
 
         public override bool Equals(object obj)

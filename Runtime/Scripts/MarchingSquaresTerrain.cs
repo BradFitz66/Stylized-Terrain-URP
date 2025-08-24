@@ -4,12 +4,14 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Kitbashery.MeshCombiner;
+using log4net.Filter;
 using NUnit.Framework.Internal.Commands;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 using UnityEngine.Rendering;
 
@@ -89,14 +91,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
     
     private ComputeBuffer _detailBuffer;
     private ComputeBuffer _argsBuffer;
-    private ComputeBuffer _voteBuffer;
-    private ComputeBuffer _scanBuffer;
-    private ComputeBuffer _groupSumArrayBuffer;
-    private ComputeBuffer _scannedGroupSumBuffer;
-    private ComputeBuffer _resultBuffer;
-    private int _numThreadGroups;
-    private int _numVoteThreadGroups;
-    private int _numGroupScanThreadGroups;
+    
+    // private ComputeBuffer _voteBuffer;
+    // private ComputeBuffer _scanBuffer;
+    // private ComputeBuffer _groupSumArrayBuffer;
+    // private ComputeBuffer _scannedGroupSumBuffer;
+    // private ComputeBuffer _resultBuffer;
+    // private int _numThreadGroups;
+    // private int _numVoteThreadGroups;
+    // private int _numGroupScanThreadGroups;
+    
     private Camera _camera;
     private bool _useCulling;
     private uint[] _args = new uint[] { 0, 0, 0, 0, 0 };
@@ -179,11 +183,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         UpdateDetailBuffer();
         
-        _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
     }
 
     private void OnEnable()
@@ -196,15 +200,15 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         UpdateDetailBuffer();
 
-        if (_resultBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null ||
-            _scannedGroupSumBuffer == null)
-            return;
+        // if (_resultBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null ||
+        //     _scannedGroupSumBuffer == null)
+        //     return;
         
-        _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
-        _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _voteBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _scanBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _groupSumArrayBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _scannedGroupSumBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
+        // _resultBuffer = new ComputeBuffer(30000, sizeof(uint), ComputeBufferType.Append);
     }
 
     //Cleanup
@@ -255,7 +259,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #region Detail Functions
     public void GenerateGrass(float size, float normalOffset)
     {
-        print("!");
         //Sanity checking to ensure instancingData is never null when doing stuff related to detail.
         if (instancingData == null)
         {
@@ -319,16 +322,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _args = new uint[5] { detailMesh.GetIndexCount(0), (uint)instancingData.GetDetailCount(), detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
 
         _mpb ??= new MaterialPropertyBlock();
-        
-        if (_detailBuffer == null || _voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null || _scannedGroupSumBuffer == null || _resultBuffer == null)
+        //_voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null || _scannedGroupSumBuffer == null || _resultBuffer == null
+        if (_detailBuffer == null)
         {
             var data = instancingData.GetDetailData();
             _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>());
-            _voteBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            _scanBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            _groupSumArrayBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            _scannedGroupSumBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
-            _resultBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>(), ComputeBufferType.Append);
+            // _voteBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            // _scanBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            // _groupSumArrayBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            // _scannedGroupSumBuffer = new ComputeBuffer(300000, 4, ComputeBufferType.Append);
+            // _resultBuffer = new ComputeBuffer(300000, Marshal.SizeOf<DetailObject>(), ComputeBufferType.Append);
             _detailBuffer.SetData(
                 data,
                 0,
@@ -336,7 +339,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 data.Length
             );
 
-            _mpb?.SetBuffer("_TerrainDetail", _useCulling ? _resultBuffer : _detailBuffer);
+            _mpb?.SetBuffer("_TerrainDetail", _detailBuffer);
         }
 
         _mpb = new MaterialPropertyBlock();
@@ -371,23 +374,23 @@ public class MarchingSquaresTerrain : MonoBehaviour
         if (_detailBuffer == null)
             _detailBuffer = new ComputeBuffer(300000, Marshal.SizeOf(typeof(DetailObject)));
 
-        _numThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
-        if (_numThreadGroups > 128)
-        {
-            int powerOfTwo = 128;
-            while (powerOfTwo < _numThreadGroups)
-                powerOfTwo *= 2;
-
-            _numThreadGroups = powerOfTwo;
-        }
-        else
-        {
-            while (128 % _numThreadGroups != 0)
-                _numThreadGroups++;
-        }
-
-        _numVoteThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
-        _numGroupScanThreadGroups = Mathf.CeilToInt(data.Length / 1024.0f);
+        // _numThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
+        // if (_numThreadGroups > 128)
+        // {
+        //     int powerOfTwo = 128;
+        //     while (powerOfTwo < _numThreadGroups)
+        //         powerOfTwo *= 2;
+        //
+        //     _numThreadGroups = powerOfTwo;
+        // }
+        // else
+        // {
+        //     while (128 % _numThreadGroups != 0)
+        //         _numThreadGroups++;
+        // }
+        //
+        // _numVoteThreadGroups = Mathf.CeilToInt(data.Length / 128.0f);
+        // _numGroupScanThreadGroups = Mathf.CeilToInt(data.Length / 1024.0f);
         
         _detailBuffer.SetData(
             data,
@@ -395,7 +398,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             0,
             data.Length
         );
-        _mpb?.SetBuffer("_TerrainDetail", _useCulling ? _resultBuffer : _detailBuffer);
+        _mpb?.SetBuffer("_TerrainDetail", _detailBuffer);
     }
     public void AddDetail(float size, float normalOffset, float3 detailPos, MarchingSquaresChunk chunk, bool distanceCheck = true)
     {
@@ -473,11 +476,15 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
+        
         Vector2Int chunkPos = chunk.chunkPosition;
         if (!instancingData.detailChunks.ContainsKey(chunkPos))
             return;
 
         int count = instancingData.detailChunks[chunkPos].Count;
+
+        if (count == 0)
+            return;
 
         var results = new NativeArray<RaycastHit>(count, Allocator.TempJob);
         var commands = new NativeArray<RaycastCommand>(count, Allocator.TempJob);
@@ -490,6 +497,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
          * and set the height of the detail object to the hit point.If the hit point is null, 
          * we don't add the detail object to the new list.
          */
+        Profiler.BeginSample("Update terrain detail height raycast job");
         for (int i = 0; i < count; i++)
         {
             DetailObject d = instancingData.detailChunks[chunkPos][i];
@@ -509,12 +517,14 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var handle = RaycastCommand.ScheduleBatch(commands, results, 1, default(JobHandle));
 
         handle.Complete();
-
+        
+        Profiler.EndSample();
 
         var index = 0;
 
 
-
+        Profiler.BeginSample("Update terrain detail height -- calculate detail normal");
+        
         foreach (var hit in results)
         {
             if (chunk == null)
@@ -600,6 +610,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             index++;
         }
 
+        Profiler.EndSample();
 
         results.Dispose();
         commands.Dispose();
@@ -608,7 +619,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #if UNITY_EDITOR
         EditorUtility.SetDirty(instancingData);
 #endif
-
+        
         UpdateDetailBuffer();
     }
     public void UpdateDensity()
@@ -636,16 +647,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #endif
         UpdateDetailBuffer();
     }
-    private string _GroupSumArrayInID  = "_GroupSumArrayIn";
-    private string _GroupSumArrayOutID = "_GroupSumArrayOut";
-    private string _GrassDataBufferID = "_GrassDataBuffer";
-    private string _voteBufferID = "_VoteBuffer";
-    private string _scanBufferID = "_ScanBuffer";
-    private string _argsBufferID = "_ArgsBuffer";
-    private string _matrixVPID = "_MatrixVP";
-    private string _cameraPositionID = "_CameraPosition";
-    private string _distanceID = "_Distance";
-    private string _objectPositionID = "_ObjectPosition";
+    // private string _GroupSumArrayInID  = 	"_GroupSumArrayIn";
+    // private string _GroupSumArrayOutID = 	"_GroupSumArrayOut";
+    // private string _GrassDataBufferID = 	"_GrassDataBuffer";
+    // private string _voteBufferID = 			"_VoteBuffer";
+    // private string _scanBufferID = 			"_ScanBuffer";
+    // private string _argsBufferID = 			"_ArgsBuffer";
+    // private string _matrixVPID = 			"_MatrixVP";
+    // private string _cameraPositionID = 		"_CameraPosition";
+    // private string _distanceID = 			"_Distance";
+    // private string _objectPositionID = 		"_ObjectPosition";
     void Dispatch(Vector3 position, Vector3 cameraPos, Matrix4x4 VP)
     {
         if (instancingData == null)
@@ -656,40 +667,40 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _args[1] = 0;
         _argsBuffer.SetData(_args);
 
-        if (_shader == null)
-            _shader = Resources.Load<ComputeShader>("Shaders/Culling");
-
-        if (_numGroupScanThreadGroups == 0 || _numThreadGroups == 0 || _numVoteThreadGroups == 0)
-            return;
-
-        _shader.SetVector("_ObjectPosition", position);
-        _shader.SetMatrix("_MatrixVP", VP);
-        _shader.SetBuffer(0, "_GrassDataBuffer", _detailBuffer);
-        _shader.SetBuffer(0, "_VoteBuffer", _voteBuffer);
-        _shader.SetVector("_CameraPosition", cameraPos);
-        _shader.SetFloat("_Distance", 5000);
-        _shader.Dispatch(0, _numVoteThreadGroups, 1, 1);
-
-        _shader.SetBuffer(1, "_VoteBuffer", _voteBuffer);
-        _shader.SetBuffer(1, "_ScanBuffer", _scanBuffer);
-        _shader.SetBuffer(1, "_GroupSumArray", _groupSumArrayBuffer);
-        _shader.Dispatch(1, _numThreadGroups, 1, 1);
-
-        ////////Scan groups
-        _shader.SetInt("_NumOfGroups", _numThreadGroups);
-        _shader.SetBuffer(2, "_GroupSumArrayIn", _groupSumArrayBuffer);
-        _shader.SetBuffer(2, "_GroupSumArrayOut", _scannedGroupSumBuffer);
-        _shader.Dispatch(2, _numGroupScanThreadGroups, 1, 1);
-
-        
-        //////////Compact
-        _shader.SetBuffer(3, "_GrassDataBuffer", _detailBuffer);
-        _shader.SetBuffer(3, "_VoteBuffer", _voteBuffer);
-        _shader.SetBuffer(3, "_ScanBuffer", _scanBuffer);
-        _shader.SetBuffer(3, "_ArgsBuffer", _argsBuffer);
-        _shader.SetBuffer(3, "_CulledGrassOutputBuffer", _resultBuffer);
-        _shader.SetBuffer(3, "_GroupSumArray", _scannedGroupSumBuffer);
-        _shader.Dispatch(3, _numThreadGroups, 1, 1);
+        // if (_shader == null)
+        //     _shader = Resources.Load<ComputeShader>("Shaders/Culling");
+        //
+        // if (_numGroupScanThreadGroups == 0 || _numThreadGroups == 0 || _numVoteThreadGroups == 0)
+        //     return;
+        //
+        // _shader.SetVector("_ObjectPosition", position);
+        // _shader.SetMatrix("_MatrixVP", VP);
+        // _shader.SetBuffer(0, "_GrassDataBuffer", _detailBuffer);
+        // _shader.SetBuffer(0, "_VoteBuffer", _voteBuffer);
+        // _shader.SetVector("_CameraPosition", cameraPos);
+        // _shader.SetFloat("_Distance", 5000);
+        // _shader.Dispatch(0, _numVoteThreadGroups, 1, 1);
+        //
+        // _shader.SetBuffer(1, "_VoteBuffer", _voteBuffer);
+        // _shader.SetBuffer(1, "_ScanBuffer", _scanBuffer);
+        // _shader.SetBuffer(1, "_GroupSumArray", _groupSumArrayBuffer);
+        // _shader.Dispatch(1, _numThreadGroups, 1, 1);
+        //
+        // ////////Scan groups
+        // _shader.SetInt("_NumOfGroups", _numThreadGroups);
+        // _shader.SetBuffer(2, "_GroupSumArrayIn", _groupSumArrayBuffer);
+        // _shader.SetBuffer(2, "_GroupSumArrayOut", _scannedGroupSumBuffer);
+        // _shader.Dispatch(2, _numGroupScanThreadGroups, 1, 1);
+        //
+        //
+        // //////////Compact
+        // _shader.SetBuffer(3, "_GrassDataBuffer", _detailBuffer);
+        // _shader.SetBuffer(3, "_VoteBuffer", _voteBuffer);
+        // _shader.SetBuffer(3, "_ScanBuffer", _scanBuffer);
+        // _shader.SetBuffer(3, "_ArgsBuffer", _argsBuffer);
+        // _shader.SetBuffer(3, "_CulledGrassOutputBuffer", _resultBuffer);
+        // _shader.SetBuffer(3, "_GroupSumArray", _scannedGroupSumBuffer);
+        // _shader.Dispatch(3, _numThreadGroups, 1, 1);
     }
 
     internal void RemoveDetail(float brushSize, Vector3 mousePosition)
@@ -921,29 +932,34 @@ public class MarchingSquaresTerrain : MonoBehaviour
     void UpdateDirtyChunks(bool updateHeight = true)
     {
         List<MarchingSquaresChunk> toUpdate = new List<MarchingSquaresChunk>();
+        bool shouldUpdateNormals = false;
         foreach (var chunk in chunks)
         {
             if (chunk.Value.isDirty)
             {
+                if(!shouldUpdateNormals && chunk.Value.updateNormals)
+                    shouldUpdateNormals = true;
+                
                 chunk.Value.RegenerateMesh();
                 toUpdate.Add(chunk.Value);
             }
         }
 
-        MergeChunks();
+        MergeChunks(shouldUpdateNormals);
         if (updateHeight)
         {
             foreach (var chunk in toUpdate)
             {
-                UpdateDetailHeight(chunk);
                 UpdateDetailHeight(chunk);
             }
         }
     }
 
     // ReSharper disable Unity.PerformanceAnalysis
-    void MergeChunks()
+    void MergeChunks(bool recalculateNormals = true)
     {
+        Profiler.BeginSample("Terrain Mesh Combining");
+        
         MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
         CombineInstance[] combine = new CombineInstance[meshFilters.Length];
         
@@ -964,9 +980,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Mesh mesh = new Mesh();
         mesh.CombineMeshes(combine);
 #if UNITY_EDITOR
-        mesh.RecalculateNormals(45.0f);
+        Profiler.BeginSample("Recalculate Terrain Normals");
+        mesh.RecalculateNormals(45f);
         mesh.Optimize();
+        Profiler.EndSample();
 #endif
+        Profiler.EndSample();
 
         transform.GetComponent<MeshFilter>().sharedMesh = mesh;
         transform.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
@@ -977,7 +996,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _vertCache = mesh.vertices;
         _colorCache = mesh.colors;
     }
-    internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool smooth = false, bool flatten = false, float _selectedHeight = 0)
+    internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool flatten = false, float _selectedHeight = 0)
     {
         foreach (Vector3 worldCell in worldCellPositions)
         {
@@ -991,6 +1010,26 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 float finalHeight = flatten ? _selectedHeight + dragHeight : dragHeight;
                 chunk.DrawHeight(localPos.x, localPos.y, dragHeight, setHeight || flatten);
             }
+        }
+
+        UpdateDirtyChunks();
+    }
+    internal void DrawHeights(List<Vector3> worldCellPositions, List<float> heights, bool setHeight = false, float _selectedHeight = 0)
+    {
+        int index = 0;
+        foreach (Vector3 worldCell in worldCellPositions)
+        {
+            float height = heights[index];
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            foreach (var chunk in chunksAtWorldPosition)
+            {
+                var localPos = new Vector2Int(
+                    Mathf.FloorToInt((worldCell.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((worldCell.z - chunk.transform.position.z) / cellSize.y)
+                );
+                chunk.DrawHeight(localPos.x, localPos.y, height, true);
+            }
+            index++;
         }
 
         UpdateDirtyChunks();
@@ -1220,4 +1259,41 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
 #endregion
 
+    public void SetHeightsAlongSlope(List<Vector3> cellsToModify, Vector3 slopePoint1World, Vector3 slopePoint2World, bool flattenGeometry)
+    {
+        foreach (var cell in cellsToModify)
+        {
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell);
+            foreach (var chunk in chunksAtWorldPosition)
+            {
+                //Get the local cell position
+                var localCellPos = new Vector2Int(
+                    Mathf.FloorToInt((cell.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((cell.z - chunk.transform.position.z) / cellSize.y)
+                );
+
+                //Project the cell position onto the slope line
+                var slopeDir = (slopePoint2World - slopePoint1World).normalized;
+                var toCell = (cell - slopePoint1World);
+                var projectedLength = Vector3.Dot(toCell, slopeDir);
+                var projectedPoint = slopePoint1World + slopeDir * projectedLength;
+
+                //Get the height at the projected point
+                float targetHeight = GetHeightAtWorldPosition(projectedPoint);
+
+                if (flattenGeometry)
+                {
+                    chunk.DrawHeight(localCellPos.x, localCellPos.y, targetHeight, true);
+                }
+                else
+                {
+                    float currentHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+                    float newHeight = Mathf.Lerp(currentHeight, targetHeight, 0.1f);
+                    chunk.DrawHeight(localCellPos.x, localCellPos.y, newHeight, true);
+                }
+            }
+        }
+
+        UpdateDirtyChunks();
+    }
 }
