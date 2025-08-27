@@ -884,7 +884,9 @@ struct GenerateChunkJob : IJobParallelFor
         Triangles.Add(vertexCount);
 
         float3 normal = -math.normalize(math.cross(v1 - v0, v2 - v0));
-
+        //Get angle of normal
+        float angle = math.degrees(math.acos(normal.y));
+        
         Normals.Add(normal);
         Normals.Add(normal);
         Normals.Add(normal);
@@ -1057,6 +1059,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
 
         mesh.SetVertices<float3>(_vertices);
+        mesh.SetNormals<float3>(_normals);
         mesh.SetColors<float4>(_colors);
         mesh.SetIndices(_triangles, MeshTopology.Triangles, 0);
         mesh.SetUVs<float2>(0, _uvs);

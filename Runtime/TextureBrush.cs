@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using UnityEngine.Pool;
 using UnityEngine.Serialization;
 
 [System.Serializable]
@@ -35,7 +36,8 @@ public class TextureBrush : TerrainTool
         Handles.color = Color.green;
         foreach (var cell in _selectedCells)
         {
-            var marchingSquaresChunks = t.GetChunksAtWorldPosition(cell);
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var marchingSquaresChunks = t.GetChunksAtWorldPosition(cell,ref list);
 
             if (marchingSquaresChunks.Count == 0)
                 break;
@@ -52,7 +54,9 @@ public class TextureBrush : TerrainTool
             );
 
             Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, Mathf.Lerp(t.cellSize.x / 2, 0, falloff));
+            ListPool<MarchingSquaresChunk>.Release(list);
         }
+        
 
         _selectedCells.Clear();
     }
@@ -146,13 +150,14 @@ public class TextureBrush : TerrainTool
 
 
                 bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
-
-                List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
+                var list = ListPool<MarchingSquaresChunk>.Get();
+                List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld,ref list);
 
                 if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
                 {
                     _selectedCells.Add(cellWorld);
                 }
+                ListPool<MarchingSquaresChunk>.Release(list);
             }
         }
 

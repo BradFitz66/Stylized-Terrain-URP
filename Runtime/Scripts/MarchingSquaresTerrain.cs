@@ -14,7 +14,7 @@ using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 using UnityEngine.Rendering;
-
+using UnityEngine.Pool;
 
 // ReSharper disable All
 
@@ -79,6 +79,7 @@ public enum GrassVertexColorMask
     Blue = 1 << 2,
     Alpha = 1 << 3,
 }
+
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
@@ -281,7 +282,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         foreach (var pos in results)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(new Vector3(pos.x, 0, pos.y));
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(new Vector3(pos.x,0,pos.y),ref list);
             foreach (var chunk in chunksAtWorldPosition)
             {
                 if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
@@ -414,7 +416,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             return;
         }
 
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(detailPos);
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(detailPos,ref list);
         if (chunksAtWorldPosition.Count == 0)
             return;
 
@@ -710,7 +713,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(mousePosition);
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(mousePosition,ref list);
         foreach (var chunk  in chunksAtWorldPosition)
         {
             if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
@@ -979,12 +983,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         Mesh mesh = new Mesh();
         mesh.CombineMeshes(combine);
-#if UNITY_EDITOR
-        Profiler.BeginSample("Recalculate Terrain Normals");
-        mesh.RecalculateNormals(45f);
-        mesh.Optimize();
-        Profiler.EndSample();
-#endif
+// #if UNITY_EDITOR
+//         Profiler.BeginSample("Recalculate Terrain Normals");
+//         mesh.RecalculateNormals(45f);
+//         mesh.Optimize();
+//         Profiler.EndSample();
+// #endif
         Profiler.EndSample();
 
         transform.GetComponent<MeshFilter>().sharedMesh = mesh;
@@ -1000,7 +1004,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
     {
         foreach (Vector3 worldCell in worldCellPositions)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell,ref list);
             foreach (var chunk in chunksAtWorldPosition)
             {
                 var localPos = new Vector2Int(
@@ -1020,7 +1025,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         foreach (Vector3 worldCell in worldCellPositions)
         {
             float height = heights[index];
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell,ref list);
             foreach (var chunk in chunksAtWorldPosition)
             {
                 var localPos = new Vector2Int(
@@ -1040,7 +1046,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var fallOffCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
         foreach (var worldCell in worldCellPositions)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell);
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(worldCell,ref list);
             foreach (var chunk in chunksAtWorldPosition)
             {
                 var localPos = new Vector2Int(
@@ -1057,14 +1064,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDirtyChunks(false);
     }
 
-
     /// <summary>
     /// Get the chunks at a given cell's world position
     /// </summary>
     /// <param name="worldCellPosition"></param>
-    internal List<MarchingSquaresChunk> GetChunksAtWorldPosition(Vector3 worldCellPosition)
+    internal List<MarchingSquaresChunk> GetChunksAtWorldPosition(Vector3 worldCellPosition, ref List<MarchingSquaresChunk> chunksAtPosition)
     {
-        var chunksAtPosition = new List<MarchingSquaresChunk>();
+        Profiler.BeginSample("Get Chunks At World Position");
         //Loop through every chunk and check if the world position is inside the chunk
         foreach (var chunk in chunks)
         {
@@ -1073,20 +1079,23 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 Mathf.FloorToInt((worldCellPosition.z - chunk.Value.transform.position.z) / cellSize.y)
             );
             var inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
+            Profiler.BeginSample("Check In Bounds");
             if (inBounds && !chunksAtPosition.Contains(chunk.Value))
             {
                 chunksAtPosition.Add(chunk.Value);
             }
+            Profiler.EndSample();
         }
 
-        chunksAtPosition = chunksAtPosition.Distinct().ToList();
-
+        Profiler.EndSample();
         return chunksAtPosition;
     }
+
     internal Color GetColor(Vector3 worldPos)
     {
         var color = Color.white;
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos);
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos,ref list);
         foreach (var chunk in chunksAtWorldPosition)
         {
             //Get the local cell position
@@ -1117,7 +1126,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             (dimensions.z - 1) * cellSize.y
         );
 
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos);
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos,ref list);
         foreach (var chunk in chunksAtWorldPosition)
         {
             if (c != null)
@@ -1139,8 +1149,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
     internal void SetHeight(Vector3 worldPos)
     {
-        List<MarchingSquaresChunk> chunks = GetChunksAtWorldPosition(worldPos);
-        foreach (MarchingSquaresChunk chunk in chunks)
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(worldPos,ref list);
+        foreach (MarchingSquaresChunk chunk in chunksAtWorldPosition)
         {
             //Get the local cell position
             Vector2Int localCellPos = new Vector2Int(
@@ -1152,17 +1163,26 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDirtyChunks();
     }
 
+    Dictionary<Vector3,List<float>> smoothHeights = new Dictionary<Vector3, List<float>>();
+    
+    
+    
     internal void SmoothHeights(List<Vector3> cells)
     {
-
-        var heights = new Dictionary<Vector3, List<float>>();
-
+        
+        Profiler.BeginSample("Smoothing Heights Collect");
+        //Clear lists
+        foreach (var smoothHeightsValue in smoothHeights.Values)
+        {
+            smoothHeightsValue.Clear();
+        }
+        
         foreach (var cell in cells)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell);
-            foreach (var chunk in chunksAtWorldPosition)
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell,ref list);
+            foreach (var chunk in list)
             {
-                //Get world position neighbors, this way we can correctly smooth between chunks
                 for (int z = -1; z <= 1; z++)
                 {
                     for (int x = -1; x <= 1; x++)
@@ -1172,28 +1192,34 @@ public class MarchingSquaresTerrain : MonoBehaviour
                             0,
                             cell.z + z * cellSize.y
                         );
-                        foreach (var nChunk in GetChunksAtWorldPosition(neighbor))
+                        var listN = ListPool<MarchingSquaresChunk>.Get();
+                        foreach (var nChunk in GetChunksAtWorldPosition(neighbor,ref listN))
                         {
                             var localCellPos = new Vector2Int(
                                 Mathf.FloorToInt((neighbor.x - nChunk.transform.position.x) / cellSize.x),
                                 Mathf.FloorToInt((neighbor.z - nChunk.transform.position.z) / cellSize.y)
                             );
                             var height = nChunk.heightMap[nChunk.GetIndex(localCellPos.y, localCellPos.x)];
-                            if (!heights.ContainsKey(cell))
-                                heights.Add(cell, new List<float>());
+                            if (!smoothHeights.ContainsKey(cell))
+                                smoothHeights.Add(cell, new List<float>()); // BAD!!!! CAUSES A LOT OF GC ALLOC
                             else
-                                heights[cell].Add(height);
+                                smoothHeights[cell].Add(height);
                         }
+                        ListPool<MarchingSquaresChunk>.Release(listN);
                     }
                 }
             }
+            ListPool<MarchingSquaresChunk>.Release(list);
         }
+        Profiler.EndSample();
 
+        Profiler.BeginSample("Smoothing Heights Apply");
         //Average the heights
-        foreach (var cell in heights)
+        foreach (var cell in smoothHeights)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell.Key);
-            foreach (var chunk in chunksAtWorldPosition)
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell.Key,ref list);
+            foreach (var chunk in list)
             {
                 //Get the local cell position
                 var localCellPos = new Vector2Int(
@@ -1201,20 +1227,24 @@ public class MarchingSquaresTerrain : MonoBehaviour
                     Mathf.FloorToInt((cell.Key.z - chunk.transform.position.z) / cellSize.y)
                 );
                 var h = cell.Value;
-                //Smooth heights
                 var curHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
-
-                chunk.DrawHeight(
-                    localCellPos.x,
-                    localCellPos.y,
-                    Mathf.Lerp(curHeight, h.Average(), 0.15f),
-                    true
-                );
+                if (h.Count > 0)
+                {
+                    chunk.DrawHeight(
+                        localCellPos.x,
+                        localCellPos.y,
+                        Mathf.Lerp(curHeight, h.Average(), 1.0f),
+                        true
+                    );
+                }
             }
+            ListPool<MarchingSquaresChunk>.Release(list);
         }
-
-
+        Profiler.EndSample();
+        
+        Profiler.BeginSample("Smoothing Heights Update Meshes");
         UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
+        Profiler.EndSample();
     }
     #endregion
 #region Misc Functions
@@ -1230,7 +1260,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
     public float GetHeightAtWorldPosition(Vector3 cellWorld)
     {
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(cellWorld);
+        
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        var chunksAtWorldPosition = GetChunksAtWorldPosition(cellWorld,ref list);
         foreach (var chunk in chunksAtWorldPosition)
         {
             //Get the local cell position
@@ -1260,10 +1292,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #endregion
 
     public void SetHeightsAlongSlope(List<Vector3> cellsToModify, Vector3 slopePoint1World, Vector3 slopePoint2World, bool flattenGeometry)
-    {
+    {            
+        var list = ListPool<MarchingSquaresChunk>.Get();
         foreach (var cell in cellsToModify)
         {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell);
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell,ref list);
             foreach (var chunk in chunksAtWorldPosition)
             {
                 //Get the local cell position

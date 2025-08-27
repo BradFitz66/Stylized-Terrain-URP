@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using UnityEngine.Pool;
 
 [System.Serializable]
 public class SculptBrush : TerrainTool
@@ -69,8 +70,8 @@ public class SculptBrush : TerrainTool
        
         foreach (var pos in _selectedCells)
         {
-
-            List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos);
+            var list = ListPool<MarchingSquaresChunk>.Get();
+            List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos, ref list);
             if (chunks.Count > 0)
             {
                 //We don't really need to be accurate with this, so just get the first chunk that contains the pos
@@ -224,32 +225,17 @@ public class SculptBrush : TerrainTool
                     {
                         Vector3 p = new Vector3(x, 0, y);
                         Vector3 mouseOffset = _mousePosition + p;
-                        //Snap to cell size
                         Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-
+                        
                         bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= _brushSize / 2;
-
                         if (insideRadius && !_smoothingCells.Contains(cellWorld))
                         {
                             _smoothingCells.Add(cellWorld);
                         }
-
                     }
                 }
 
-                foreach (var cell in _smoothingCells)
-                {
-                    var chunks = t.GetChunksAtWorldPosition(cell);
-                    if (chunks.Count == 0)
-                        continue;
-                    var c = chunks[0];
-                    var localCell = new Vector2Int(
-                        Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
-                        Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
-                    );
-                    t.SmoothHeights(_smoothingCells);
-                    
-                }
+                t.SmoothHeights(_smoothingCells);
                 _smoothingCells.Clear();
                 break;
                 
