@@ -64,18 +64,7 @@ public static class ExtensionMethods
             list.Add(item);
         }
     }
-
-    //Iterator for bounds (loop over each edge)
-    public static PositionEnumerator allPositionsWithin(this Bounds bounds)
-    {
-        //Convert to BoundsInt
-        BoundsInt b = new BoundsInt(
-            Vector3Int.FloorToInt(bounds.min),
-            Vector3Int.FloorToInt(bounds.size)
-        );
-        return b.allPositionsWithin;
-    }
-
+    
     //Cast color to float4
     public static float4 ToFloat4(this Color c)
     {
@@ -92,14 +81,34 @@ public static class ExtensionMethods
     {
         return math.all(math.abs(a - b) < 0.0001f);
     }
-
-
-
-    public static unsafe NativeArray<T> ToArray<T>(this in UnsafeList<T> list) where T : unmanaged
+    
+    //Custom smoothing function that takes a list of numbers and returns a "smoothed" list of numbers
+    public static List<float> CustomSmooth(this List<float> values, int iterations, float minDifference)
     {
-        NativeArray<T> result = new NativeArray<T>(list.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-        UnsafeUtility.MemCpy(result.GetUnsafePtr(), list.Ptr, (long)list.Length * sizeof(T));
-        return result;
-    }
+        var smoothedValues = new List<float>(values);
+        var count = values.Count;
 
+        //Take the values of the list and smooth them such that none of them have a difference greater than minDifference
+        for (var iter = 0; iter < iterations; iter++)
+        {
+            var newValues = new List<float>(smoothedValues);
+            for (var i = 1; i < count - 1; i++)
+            {
+                var prev = smoothedValues[i - 1];
+                var current = smoothedValues[i];
+                var next = smoothedValues[i + 1];
+
+                var average = (prev + current + next) / 3f;
+
+                if (Mathf.Abs(current - average) > minDifference)
+                {
+                    newValues[i] = average;
+                }
+            }
+
+            smoothedValues = newValues;
+        }
+        
+        return smoothedValues;
+    }
 }

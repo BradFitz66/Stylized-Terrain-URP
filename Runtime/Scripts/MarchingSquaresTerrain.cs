@@ -983,12 +983,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         Mesh mesh = new Mesh();
         mesh.CombineMeshes(combine);
-// #if UNITY_EDITOR
-//         Profiler.BeginSample("Recalculate Terrain Normals");
-//         mesh.RecalculateNormals(45f);
-//         mesh.Optimize();
-//         Profiler.EndSample();
-// #endif
+#if UNITY_EDITOR
+        Profiler.BeginSample("Recalculate Terrain Normals");
+        mesh.RecalculateNormals(45f);
+        mesh.Optimize();
+        Profiler.EndSample();
+#endif
         Profiler.EndSample();
 
         transform.GetComponent<MeshFilter>().sharedMesh = mesh;
@@ -1090,6 +1090,26 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Profiler.EndSample();
         return chunksAtPosition;
     }
+    
+    internal int GetAmountOfChunksAtWorldPosition(Vector3 worldCellPosition)
+    {
+        int count = 0;
+        //Loop through every chunk and check if the world position is inside the chunk
+        foreach (var chunk in chunks)
+        {
+            var localCellPos = new Vector2Int(
+                Mathf.FloorToInt((worldCellPosition.x - chunk.Value.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((worldCellPosition.z - chunk.Value.transform.position.z) / cellSize.y)
+            );
+            var inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
+            if (inBounds)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
 
     internal Color GetColor(Vector3 worldPos)
     {
@@ -1162,11 +1182,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
         UpdateDirtyChunks();
     }
+    
+    
 
     Dictionary<Vector3,List<float>> smoothHeights = new Dictionary<Vector3, List<float>>();
-    
-    
-    
     internal void SmoothHeights(List<Vector3> cells)
     {
         

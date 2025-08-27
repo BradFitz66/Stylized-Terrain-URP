@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using UnityEngine.Pool;
+using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 
 [System.Serializable]
@@ -139,7 +140,8 @@ public class TextureBrush : TerrainTool
         groundPlane.Raycast(ray, out float distance);
         bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000, 1 << t.gameObject.layer);
         _mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
-
+        Profiler.BeginSample("Select Cells _ Texture Brush");
+        var list = ListPool<MarchingSquaresChunk>.Get();
         for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
         {
             for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
@@ -150,21 +152,23 @@ public class TextureBrush : TerrainTool
 
 
                 bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
-                var list = ListPool<MarchingSquaresChunk>.Get();
-                List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld,ref list);
+                int chunks = t.GetAmountOfChunksAtWorldPosition(cellWorld);
 
-                if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
+                if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks > 0)
                 {
                     _selectedCells.Add(cellWorld);
                 }
-                ListPool<MarchingSquaresChunk>.Release(list);
             }
         }
-
+        ListPool<MarchingSquaresChunk>.Release(list);
+        Profiler.EndSample();
+        
+        Profiler.BeginSample("Draw Colors _ Texture Brush");
         if (_mouseDown)
         {
             t.DrawColors(_selectedCells, _mousePosition, _brushSize, color, _fallOff);
         }
+        Profiler.EndSample();
 
         if(Event.current.type == EventType.KeyDown)
         {
