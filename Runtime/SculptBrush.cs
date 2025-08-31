@@ -3,11 +3,8 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using Codice.Client.BaseCommands;
 using Unity.Mathematics;
 using Unity.Profiling;
-using UnityEngine.Pool;
-using UnityEngine.Rendering;
 
 [System.Serializable]
 public class SculptBrush : TerrainTool
