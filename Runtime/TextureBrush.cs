@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Mathematics;
 using Unity.Profiling;
@@ -33,9 +34,8 @@ public class TextureBrush : TerrainTool
     
     public override void DrawHandles()
     {
-        if (!HandleMaterial || HandleBuffer == null || !HandleMesh)
+        if (!HandleMaterial || HandleBuffer == null || !HandleBuffer.IsValid() || !HandleMesh)
         {
-            
             InitializeInstancingInfo();
             return;
         }
@@ -60,32 +60,40 @@ public class TextureBrush : TerrainTool
                 
                 var withinBounds = t.TotalTerrainSize.Contains(cellWorld);
                 
-                if (!withinBounds)
+                if (!withinBounds && !_selectedCells.Contains(cellWorld))
                     continue;
                 
-                var dist = (cellWorld - _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y)).sqrMagnitude;
+                var dist = Vector3.Distance(cellWorld, _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y));
                 var falloff = _fallOff 
                     ? _falloffCurve.Evaluate(((_brushSize / 2) - dist) / (_brushSize / 2)) 
                     : 0;
                 
-                //Round cellWorld to nearest chunk position
                 var height = t.GetHeightAtWorldPosition(cellWorld);
                 
-                HandleInstances.Add(new BrushHandleInstance()
+                var newInstance = new BrushHandleInstance()
                 {
                     matrix = float4x4.TRS(
-                        cellWorld + (Vector3.up * (height+.5f)),
+                        cellWorld + (Vector3.up * (height + .5f)),
                         Quaternion.Euler(90, 0, 0),
-                        Vector3.Lerp(Vector3.one * 0.1f, new Vector3(t.cellSize.x*.75f,t.cellSize.y*.75f,1), 1-falloff)
+                        Vector3.Lerp(Vector3.one * 0.1f, new Vector3(t.cellSize.x * .75f, t.cellSize.y * .75f, 1),
+                            1 - falloff)
                     ),
                     heightOffset = height
-                });
+                };
+                
+                //Make sure HandleInstances doesn't already contain this instance
+                if(HandleInstances.Contains(newInstance))
+                    continue;
+
+                HandleInstances.Add(newInstance);
                 _selectedCells.Add(cellWorld);
+                HandleBuffer?.SetData(HandleInstances, 0, 0, HandleInstances.Count);
+                RenderParameters.matProps?.SetBuffer("_TerrainHandles", HandleBuffer);
+
             }
         }
+
         
-        HandleBuffer?.SetData(HandleInstances);
-        RenderParameters.matProps?.SetBuffer("_TerrainHandles", HandleBuffer);
 
         _collectCellsMarker.End();
         

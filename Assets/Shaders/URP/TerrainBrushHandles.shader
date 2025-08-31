@@ -2,19 +2,19 @@ Shader "Custom/TerrainHandlesInstanced"
 {
     Properties
     {
-        _Color ("Color", Color) = (0,1,0,.25)
+        _Color ("Color", Color) = (0,1,0,1)
     }
     SubShader
     {
         Tags { 
             "RenderPipeline" = "UniversalRenderPipeline" 
             "IgnoreProjector" = "True" 
-            "Queue" = "Transparent" 
+            "Queue" = "Overlay" 
             "RenderType" = "Transparent"
         }
         LOD 100
         Blend SrcAlpha OneMinusSrcAlpha
-
+        ZTest Always
         
         Pass
         {

@@ -8,10 +8,25 @@ using UnityEngine;
 public class TerrainTool : ScriptableObject
 {
     
-    protected struct BrushHandleInstance
+    protected struct BrushHandleInstance : IEquatable<BrushHandleInstance>
     {
         public float4x4 matrix;
         public float heightOffset;
+
+        public bool Equals(BrushHandleInstance other)
+        {
+            return matrix.Equals(other.matrix) && heightOffset.Equals(other.heightOffset);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is BrushHandleInstance other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(matrix, heightOffset);
+        }
     }
     
     public MarchingSquaresTerrain t;

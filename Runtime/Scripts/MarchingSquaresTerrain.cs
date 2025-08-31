@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -12,6 +13,7 @@ using UnityEngine.Serialization;
 using UnityEngine.Rendering;
 using UnityEngine.Pool;
 using Unity.Profiling;
+using UnityEngine.EventSystems;
 
 // ReSharper disable All
 
@@ -23,6 +25,7 @@ public struct DetailObject
     public float3 normal;
     public float normalOffset;
 }
+
 
 public enum NoiseMixMode
 {
@@ -99,17 +102,19 @@ public class MarchingSquaresTerrain : MonoBehaviour
     // private int _numVoteThreadGroups;
     // private int _numGroupScanThreadGroups;
     
-    static ProfilerMarker _detailUpdateMarker = new ProfilerMarker("MarchingSquaresTerrain.UpdateDetails");
-    static ProfilerMarker _detailRaycastMarker = new ProfilerMarker("MarchingSquaresTerrain.DetailRaycast");
+    ProfilerMarker _detailUpdateMarker = new ProfilerMarker("MarchingSquaresTerrain.UpdateDetails");
+    ProfilerMarker _detailNormalCalcMarker = new ProfilerMarker("MarchingSquaresTerrain.DetailNormalCalc");
     
-    static ProfilerMarker _chunkAddMarker = new ProfilerMarker("MarchingSquaresTerrain.AddChunk");
-    static ProfilerMarker _chunkRemMarker = new ProfilerMarker("MarchingSquaresTerrain.RemoveChunk");
-    static ProfilerMarker _chunkMergeMarker = new ProfilerMarker("MarchingSquaresTerrain.MergeChunks");
+    ProfilerMarker _detailRaycastMarker = new ProfilerMarker("MarchingSquaresTerrain.DetailRaycast");
     
-    static ProfilerMarker _meshNormalMarker = new ProfilerMarker("MarchingSquaresTerrain.RecalculateNormals");
-    static ProfilerMarker _meshCombineMarker = new ProfilerMarker("MarchingSquaresTerrain.CombineMeshes");
+    ProfilerMarker _chunkAddMarker = new ProfilerMarker("MarchingSquaresTerrain.AddChunk");
+    ProfilerMarker _chunkRemMarker = new ProfilerMarker("MarchingSquaresTerrain.RemoveChunk");
+    ProfilerMarker _chunkMergeMarker = new ProfilerMarker("MarchingSquaresTerrain.MergeChunks");
     
-    static ProfilerMarker _drawColorsMarker = new ProfilerMarker("MarchingSquaresTerrain.DrawColors");
+    ProfilerMarker _meshNormalMarker = new ProfilerMarker("MarchingSquaresTerrain.RecalculateNormals");
+    ProfilerMarker _meshCombineMarker = new ProfilerMarker("MarchingSquaresTerrain.CombineMeshes");
+    
+    ProfilerMarker _drawColorsMarker = new ProfilerMarker("MarchingSquaresTerrain.DrawColors");
     
     private Camera _camera;
     private bool _useCulling;
@@ -419,39 +424,29 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
-
-        var list = ListPool<MarchingSquaresChunk>.Get();
-
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(detailPos,ref list);
-        if (chunksAtWorldPosition.Count == 0)
-            return;
         
-        MarchingSquaresChunk c = chunksAtWorldPosition[0];
-
         bool canPlace = true;
-        foreach (var otherChunk in chunksAtWorldPosition)
+        if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
+            instancingData.detailChunks.Add(chunk.chunkPosition, new List<DetailObject>());
+        if (distanceCheck)
         {
-            if (!instancingData.detailChunks.ContainsKey(otherChunk.chunkPosition))
-                instancingData.detailChunks.Add(otherChunk.chunkPosition, new List<DetailObject>());
-            if (distanceCheck)
+            Parallel.ForEach(instancingData.detailChunks[chunk.chunkPosition], (d) =>
             {
-                Parallel.ForEach(instancingData.detailChunks[otherChunk.chunkPosition], (d) =>
+                if (math.distance(new float3(d.trs.c3.x, detailPos.y, d.trs.c3.z), detailPos) < currentDetailDensity)
                 {
-                    if (math.distance(new float3(d.trs.c3.x, detailPos.y, d.trs.c3.z), detailPos) < currentDetailDensity)
-                    {
-                        canPlace = false;
-                    }
-                });
-            }
+                    canPlace = false;
+                }
+            });
         }
+        
 
         if (!canPlace)
             return;
 
         //Round detailPos to the nearest cell
         Vector2Int cellPos = new Vector2Int(
-            Mathf.FloorToInt((detailPos.x - c.transform.position.x) / cellSize.x),
-            Mathf.FloorToInt((detailPos.z - c.transform.position.z) / cellSize.y)
+            Mathf.FloorToInt((detailPos.x - chunk.transform.position.x) / cellSize.x),
+            Mathf.FloorToInt((detailPos.z - chunk.transform.position.z) / cellSize.y)
         );
 
         float height = chunk.heightMap[chunk.GetIndex(cellPos.y, cellPos.x)];
@@ -466,17 +461,18 @@ public class MarchingSquaresTerrain : MonoBehaviour
             normalOffset = normalOffset,
         };
 
-        if (!instancingData.detailChunks.ContainsKey(c.chunkPosition))
-            instancingData.detailChunks.Add(c.chunkPosition, new List<DetailObject>());
-        instancingData.detailChunks[c.chunkPosition].Add(detailObject);
+        if (!instancingData.detailChunks.ContainsKey(chunk.chunkPosition))
+            instancingData.detailChunks.Add(chunk.chunkPosition, new List<DetailObject>());
+        instancingData.detailChunks[chunk.chunkPosition].Add(detailObject);
 
 #if UNITY_EDITOR
         EditorUtility.SetDirty(instancingData);
 #endif
 
-        UpdateDetailHeight(c);
+        UpdateDetailHeight(chunk);
     }
 
+    [BurstCompile]
     void UpdateDetailHeight(MarchingSquaresChunk chunk, bool checkColors = false)
     {
         if (instancingData == null)
@@ -484,8 +480,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
             CreateOrLoadInstanceData();
             return;
         }
+
+        if (chunk == null)
+            return;
         
         Vector2Int chunkPos = chunk.chunkPosition;
+        
         if (!instancingData.detailChunks.ContainsKey(chunkPos))
             return;
 
@@ -493,7 +493,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         if (count == 0)
             return;
-
+        
+        _detailRaycastMarker.Begin();
         var results = new NativeArray<RaycastHit>(count, Allocator.TempJob);
         var commands = new NativeArray<RaycastCommand>(count, Allocator.TempJob);
 
@@ -508,14 +509,14 @@ public class MarchingSquaresTerrain : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             DetailObject d = instancingData.detailChunks[chunkPos][i];
-            Vector3 pos = new Vector3(
+            float3 pos = new Vector3(
                 d.trs.c3.x,
                 1000,
                 d.trs.c3.z
             );
             commands[i] = new RaycastCommand(
                 pos,
-                Vector3.down * 2000,
+                new float3(0,-1,0) * 2000,
                 QueryParameters.Default
             );
         }
@@ -524,31 +525,23 @@ public class MarchingSquaresTerrain : MonoBehaviour
         var handle = RaycastCommand.ScheduleBatch(commands, results, 1, default(JobHandle));
 
         handle.Complete();
-        
+        _detailRaycastMarker.End();
+
 
         var index = 0;
 
-
+        
+        _detailNormalCalcMarker.Begin();
         
         foreach (var hit in results)
         {
-            if (chunk == null)
-            {
-                index++;
-                continue;
-            }
 
-            if (!hit.collider.GetComponent<MarchingSquaresChunk>())
-            {
-                index++;
-                continue;
-            }
             MarchingSquaresChunk hitChunk = hit.collider.GetComponent<MarchingSquaresChunk>();
 
             DetailObject d = instancingData.detailChunks[chunkPos][index];
-            Vector3 pos = hit.point;
+            float3 pos = hit.point;
             //Get lossyScale from float4x4
-            float3 size = new Vector3(
+            float3 size = new float3(
                 math.length(d.trs.c0),
                 math.length(d.trs.c1),
                 math.length(d.trs.c2)
@@ -566,13 +559,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
             int tri2 = hitChunk.triCache[triIdx2];
             int tri3 = hitChunk.triCache[triIdx3];
             
-            Vector3 n0 = hitChunk.normCache[tri1];
-            Vector3 n1 = hitChunk.normCache[tri2];
-            Vector3 n2 = hitChunk.normCache[tri3];
+            float3 n0 = hitChunk.normCache[tri1];
+            float3  n1 = hitChunk.normCache[tri2];
+            float3  n2 = hitChunk.normCache[tri3];
             
-            Color c0 = hitChunk.colorCache[tri1];
-            Color c1 = hitChunk.colorCache[tri2];
-            Color c2 = hitChunk.colorCache[tri3];
+            float4 c0 = hitChunk.colorCache[tri1].ToFloat4();
+            float4 c1 = hitChunk.colorCache[tri2].ToFloat4();
+            float4 c2 = hitChunk.colorCache[tri3].ToFloat4();
             
             var baryCenter = hit.barycentricCoordinate;
             var interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
@@ -585,16 +578,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 switch (grassVertexColorMask)
                 {
                     case GrassVertexColorMask.Red:
-                        canPlace = avgColor.r > 0.5f;
+                        canPlace = avgColor.x > 0.5f;
                         break;
                     case GrassVertexColorMask.Green:
-                        canPlace = avgColor.g > 0.5f;
+                        canPlace = avgColor.y > 0.5f;
                         break;
                     case GrassVertexColorMask.Blue:
-                        canPlace = avgColor.b > 0.5f;
+                        canPlace = avgColor.z > 0.5f;
                         break;
                     case GrassVertexColorMask.Alpha:
-                        canPlace = avgColor.a > 0.5f;
+                        canPlace = avgColor.w > 0.5f;
                         break;
                 }
             }
@@ -602,9 +595,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
             if (canPlace)
             {
-                interpolatedNormal = interpolatedNormal.normalized;
+                interpolatedNormal = math.normalize(interpolatedNormal);
                 interpolatedNormal = hit.collider.transform.TransformDirection(interpolatedNormal);
-                var trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+                var trs = float4x4.TRS(pos +new float3(0,1,0) * d.normalOffset, Quaternion.identity, size);
 
                 newDetailList.Add(new DetailObject()
                 {
@@ -616,7 +609,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
             
             index++;
         }
-        
+        _detailNormalCalcMarker.End();
+
         results.Dispose();
         commands.Dispose();
 
