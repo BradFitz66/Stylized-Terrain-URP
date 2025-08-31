@@ -2,6 +2,9 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine.Pool;
 using UnityEngine.Profiling;
 using UnityEngine.Serialization;
@@ -9,57 +12,104 @@ using UnityEngine.Serialization;
 [System.Serializable]
 public class TextureBrush : TerrainTool
 {
-    private Vector3 _mousePosition;
-
+    private static ProfilerMarker _collectCellsMarker = new ProfilerMarker("Collect Cells _ Texture Brush");
+    private static ProfilerMarker _drawColorsMarker = new ProfilerMarker("Draw Colors _ Texture Brush");
+    private static ProfilerMarker _collectCellsInnerMarker = new ProfilerMarker("Collect Cells Inner _ Texture Brush");
     [FormerlySerializedAs("Layers")] [SerializeField]
     private Texture2D[] layers;
-
     private GUIContent[] _textureContent;
 
     private bool _mouseDown;
     private bool _fallOff;
-
     private int _selectedTexture;
-
     private float _brushSize = 2;
-
     private List<Vector3> _selectedCells;
-
-    public Color color = Color.white;
-
+    private Color _color = Color.white;
     private GUIStyle _labelStyle;
-
     private AnimationCurve _falloffCurve = AnimationCurve.Linear(0,1,1,0);
+    private Vector3 _mousePosition;
+
+    
+    
     public override void DrawHandles()
     {
+        if (!HandleMaterial || HandleBuffer == null || !HandleMesh)
+        {
+            
+            InitializeInstancingInfo();
+            return;
+        }
+
         _falloffCurve = AnimationCurve.Linear(0, 1, 1, 0);
         _labelStyle.normal.textColor = Color.black;
-        Handles.color = Color.green;
-        foreach (var cell in _selectedCells)
+
+        _collectCellsMarker.Begin();
+        var brushSizeHalf = Mathf.FloorToInt(_brushSize / 2);
+        for (var y = -brushSizeHalf; y <= brushSizeHalf; y++)
         {
-            var list = ListPool<MarchingSquaresChunk>.Get();
-            var marchingSquaresChunks = t.GetChunksAtWorldPosition(cell,ref list);
+            for (var x = -brushSizeHalf; x <= brushSizeHalf; x++)
+            {
+                var p = new Vector3(x, 0, y);
+                var mouseOffset = _mousePosition + p;
+                var cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
+                var insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize/2;
 
-            if (marchingSquaresChunks.Count == 0)
-                break;
-
-            var dist = Vector3.Distance(cell, _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y));
-            var falloff = _fallOff 
-                            ? _falloffCurve.Evaluate(((_brushSize / 2) - dist) / (_brushSize / 2)) 
-                            : 0;
-
-            var c = marchingSquaresChunks[0];
-            var localCell = new Vector2Int(
-                Mathf.FloorToInt((cell.x - c.transform.position.x) / t.cellSize.x),
-                Mathf.FloorToInt((cell.z - c.transform.position.z) / t.cellSize.y)
-            );
-
-            Handles.DrawSolidDisc(cell + Vector3.up * c.heightMap[c.GetIndex(localCell.y, localCell.x)], Vector3.up, Mathf.Lerp(t.cellSize.x / 2, 0, falloff));
-            ListPool<MarchingSquaresChunk>.Release(list);
+                if (!insideRadius)
+                    continue;
+                
+                
+                var withinBounds = t.TotalTerrainSize.Contains(cellWorld);
+                
+                if (!withinBounds)
+                    continue;
+                
+                var dist = (cellWorld - _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y)).sqrMagnitude;
+                var falloff = _fallOff 
+                    ? _falloffCurve.Evaluate(((_brushSize / 2) - dist) / (_brushSize / 2)) 
+                    : 0;
+                
+                //Round cellWorld to nearest chunk position
+                var height = t.GetHeightAtWorldPosition(cellWorld);
+                
+                HandleInstances.Add(new BrushHandleInstance()
+                {
+                    matrix = float4x4.TRS(
+                        cellWorld + (Vector3.up * (height+.5f)),
+                        Quaternion.Euler(90, 0, 0),
+                        Vector3.Lerp(Vector3.one * 0.1f, new Vector3(t.cellSize.x*.75f,t.cellSize.y*.75f,1), 1-falloff)
+                    ),
+                    heightOffset = height
+                });
+                _selectedCells.Add(cellWorld);
+            }
         }
         
+        HandleBuffer?.SetData(HandleInstances);
+        RenderParameters.matProps?.SetBuffer("_TerrainHandles", HandleBuffer);
 
-        _selectedCells.Clear();
+        _collectCellsMarker.End();
+        
+        _drawColorsMarker.Begin();
+        if (_mouseDown)
+        {
+            t.DrawColors(_selectedCells, _mousePosition, _brushSize, _color, _fallOff);
+        }
+        _drawColorsMarker.End();
+
+        Graphics.RenderMeshPrimitives(RenderParameters, HandleMesh, 0,HandleInstances.Count);
+        _selectedCells?.Clear();
+        HandleInstances?.Clear();
+    }
+
+    void InitializeInstancingInfo()
+    {
+        HandleMaterial = new Material(Shader.Find("Custom/TerrainHandlesInstanced"));
+        HandleMesh = Resources.GetBuiltinResource<Mesh>("Quad.fbx");
+        HandleBuffer = new ComputeBuffer(MaxHandleCount, Marshal.SizeOf(typeof(BrushHandleInstance))); 
+
+        RenderParameters = new RenderParams(HandleMaterial);
+        RenderParameters.worldBounds = new Bounds(Vector3.zero, Vector3.one * 10000);
+        RenderParameters.matProps = new MaterialPropertyBlock();
     }
 
     public override void ToolSelected()
@@ -81,12 +131,16 @@ public class TextureBrush : TerrainTool
 
     void UpdateMaterialLayers(Texture2D[] l)
     {
-        foreach (Material mat in t.GetComponent<MeshRenderer>().sharedMaterials)
+        var mr = t.GetComponentsInChildren<MeshRenderer>();
+        foreach (var r in mr)
         {
-            mat.SetTexture("_Ground1", layers[0]);
-            mat.SetTexture("_Ground2", layers[1]);
-            mat.SetTexture("_Ground3", layers[2]);
-            mat.SetTexture("_Ground4", layers[3]);
+            
+            var mat = r.sharedMaterial;
+            
+            mat?.SetTexture("_Ground1", layers[0]);
+            mat?.SetTexture("_Ground2", layers[1]);
+            mat?.SetTexture("_Ground3", layers[2]);
+            mat?.SetTexture("_Ground4", layers[3]);
         }
     }
 
@@ -107,9 +161,18 @@ public class TextureBrush : TerrainTool
         if (button == 0)
             _mouseDown = false;
     }
+    public override void OnMouseDrag(Vector2 delta)
+    {
+
+    }
     public override void Update()
     {
-        _selectedCells?.Clear();
+        if (!HandleMaterial || HandleBuffer == null || !HandleMesh)
+        {
+            
+            InitializeInstancingInfo();
+            return;
+        }
 
         if (Event.current.type == EventType.ScrollWheel)
         {
@@ -122,53 +185,27 @@ public class TextureBrush : TerrainTool
         switch (_selectedTexture)
         {
             case 0:
-                color = new Color(1, 0, 0, 0);
+                _color = new Color(1, 0, 0, 0);
                 break;
             case 1:
-                color = new Color(0, 1, 0, 0);
+                _color = new Color(0, 1, 0, 0);
                 break;
             case 2:
-                color = new Color(0, 0, 1, 0);
+                _color = new Color(0, 0, 1, 0);
                 break;
             case 3:
-                color = new Color(0, 0, 0, 1);
+                _color = new Color(0, 0, 0, 1);
                 break;
         }
 
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out float distance);
-        bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000, 1 << t.gameObject.layer);
+        bool hit = Physics.Raycast(ray, out RaycastHit hitInfo, 1000);
         _mousePosition = hit ? new Vector3(hitInfo.point.x, 0, hitInfo.point.z) : ray.GetPoint(distance);
-        Profiler.BeginSample("Select Cells _ Texture Brush");
-        var list = ListPool<MarchingSquaresChunk>.Get();
-        for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
-        {
-            for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
-            {
-                Vector3 p = new Vector3(x, 0, y);
-                Vector3 mouseOffset = _mousePosition + p;
-                Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-
-
-                bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
-                int chunks = t.GetAmountOfChunksAtWorldPosition(cellWorld);
-
-                if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks > 0)
-                {
-                    _selectedCells.Add(cellWorld);
-                }
-            }
-        }
-        ListPool<MarchingSquaresChunk>.Release(list);
-        Profiler.EndSample();
         
-        Profiler.BeginSample("Draw Colors _ Texture Brush");
-        if (_mouseDown)
-        {
-            t.DrawColors(_selectedCells, _mousePosition, _brushSize, color, _fallOff);
-        }
-        Profiler.EndSample();
+
+
 
         if(Event.current.type == EventType.KeyDown)
         {

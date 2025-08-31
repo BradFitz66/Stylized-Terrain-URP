@@ -2,6 +2,9 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using Unity.Profiling;
+using UnityEditor.Experimental.GraphView;
+using UnityEngine.Pool;
 using UnityEngine.Serialization;
 
 enum Mode
@@ -15,6 +18,11 @@ enum Mode
 public class DetailTool : TerrainTool
 {
 
+    static ProfilerMarker _detailMarker = new ProfilerMarker("Detail Tool On Inspector GUI");
+    static ProfilerMarker _updateMarker = new ProfilerMarker("Detail Tool Update");
+    static ProfilerMarker _drawHandlesMarker = new ProfilerMarker("Detail Tool Draw Handles");
+    
+    
     private Vector3 _mousePosition;
     private Vector3 _totalTerrainSize;
 
@@ -35,12 +43,10 @@ public class DetailTool : TerrainTool
     public override void DrawHandles()
     {
 
+        _drawHandlesMarker.Begin();
         Handles.color = Color.green;
         Handles.DrawSolidDisc(_mousePosition + Vector3.up * hoveredCellHeight, Vector3.up, _brushSize / 2);
-        Handles.color = Color.white;
-        Handles.DrawSolidDisc(mouseOffset + Vector3.up * (hoveredCellHeight+.01f), Vector3.up, 1);
         
-
         //Draw wire around hovered chunk
         if (t.chunks.ContainsKey(_chunkPos))
         {
@@ -52,6 +58,7 @@ public class DetailTool : TerrainTool
             );
             Handles.DrawWireCube(chunkWorldPos, _totalTerrainSize);
         }
+        _drawHandlesMarker.End();
 
     }
     public override void OnMouseDown(int button = 0)
@@ -93,6 +100,7 @@ public class DetailTool : TerrainTool
     
     public override void OnInspectorGUI()
     {
+        _detailMarker.Begin();
         base.OnInspectorGUI();
         normalOffset = EditorGUILayout.FloatField("Normal Offset", normalOffset);
         size = EditorGUILayout.FloatField("Size", size);
@@ -110,11 +118,13 @@ public class DetailTool : TerrainTool
         EditorPrefs.SetFloat("Size", size);
 
         SerializedT.ApplyModifiedProperties();
+        _detailMarker.End();
     }
 
     private Vector3 mouseOffset;
     public override void Update()
     {
+        _updateMarker.Begin();
         _totalTerrainSize = new Vector3(
             (t.dimensions.x - 1) * t.cellSize.x,
             0,
@@ -141,62 +151,43 @@ public class DetailTool : TerrainTool
         );
 
 
-
-        if (_mouseDown)
+        if (!_mouseDown) return;
+        
+        if (_mode == Mode.Add)
         {
-            if (_mode == Mode.Add)
+            for (var y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
             {
-                // for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
-                // {
-                //     for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
-                //     {
-                //         Vector3 p = new Vector3(x, 0, y);
-                //         Vector3 mouseOffset = _mousePosition + p;
-                //         Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-                //
-                //
-                //         bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y), cellWorld) <= _brushSize / 2;
-                //
-                //         List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(cellWorld);
-                //
-                //         if (!_selectedCells.Contains(cellWorld) && insideRadius && chunks.Count > 0)
-                //         {
-                //             _selectedCells.Add(cellWorld);
-                //         }
-                //     }
-                // }
-
-                for (var y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
+                for (var x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
                 {
-                    for (var x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
-                    {
-                        var p = new Vector3(x, 0, y);
-                        mouseOffset = _mousePosition + p/2;
+                    var p = new Vector3(x, 0, y);
+                    mouseOffset = _mousePosition + p/2;
+ 
+                    //Get chunk position at mouseOffset
+                    var chunk = new Vector2Int(
+                        Mathf.FloorToInt(mouseOffset.x / _totalTerrainSize.x),
+                        Mathf.FloorToInt(mouseOffset.z / _totalTerrainSize.z)
+                    );
 
-                        //Get chunk position at mouseOffset
-                        var chunk = new Vector2Int(
-                            Mathf.FloorToInt(mouseOffset.x / _totalTerrainSize.x),
-                            Mathf.FloorToInt(mouseOffset.z / _totalTerrainSize.z)
-                        );
+                    var insideRadius = Vector3.Distance(_mousePosition, mouseOffset) <= _brushSize / 2;
+                    if (!t.chunks.ContainsKey(chunk) || !insideRadius)
+                        return;
 
-                        var insideRadius = Vector3.Distance(_mousePosition, mouseOffset) <= _brushSize / 2;
-                        if (!t.chunks.ContainsKey(chunk) || !insideRadius)
-                        {
-                            return;
-                        }
+                    var list = ListPool<MarchingSquaresChunk>.Get();
+                    t.GetChunksAtWorldPosition(mouseOffset, ref list);
+                    if (list.Count == 0)
+                        return;
+                    
+                    t.AddDetail(size, normalOffset, mouseOffset, list[0]);
                         
-                        var c = t.chunks[chunk];
-                        t.AddDetail(size, normalOffset, mouseOffset, c);
-                        
-                    }
                 }
             }
-            else
-            {
-                t.RemoveDetail(_brushSize, _mousePosition);
-            }
-
         }
+        else
+        {
+            t.RemoveDetail(_brushSize, _mousePosition);
+        }
+        _updateMarker.End();
     }
+    
 }
 #endif

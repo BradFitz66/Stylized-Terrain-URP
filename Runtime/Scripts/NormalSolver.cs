@@ -20,11 +20,13 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine;
 
 public static class NormalSolver
 {
-    
+    static ProfilerMarker _collectTrianglesMarker = new ProfilerMarker("Collect Triangles");
+    static ProfilerMarker _processVerticesMarker = new ProfilerMarker("Process Vertices");
     /// <summary>
     ///     Recalculate the normals of a mesh based on an angle threshold. This takes
     ///     into account distinct vertices that have the same position.
@@ -34,24 +36,23 @@ public static class NormalSolver
     ///     The smoothing angle. Note that triangles that already share
     ///     the same vertex will be smooth regardless of the angle! 
     /// </param>
+    [BurstCompile(CompileSynchronously = true)]
     public static void RecalculateNormals(this Mesh mesh, float angle)
     {
         var cosineThreshold = math.cos(angle * Mathf.Deg2Rad);
 
         var vertices = mesh.vertices;
-        var normals = new Vector3[vertices.Length];
-
-        // Holds the normal of each triangle in each sub mesh.
-        var triNormals = new Vector3[mesh.subMeshCount][];
-
-        var dictionary = new Dictionary<VertexKey, List<VertexEntry>>(vertices.Length);
-
+        var normals = new NativeArray<float3>(vertices.Length,Allocator.Temp);
+        var triNormals = new float3[mesh.subMeshCount][];
+        var dictionary = new NativeHashMap<VertexKey, NativeList<VertexEntry>>(vertices.Length, Allocator.Temp);
+        
+        _collectTrianglesMarker.Begin();
         for (var subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; ++subMeshIndex)
         {
 
             var triangles = mesh.GetTriangles(subMeshIndex);
 
-            triNormals[subMeshIndex] = new Vector3[triangles.Length / 3];
+            triNormals[subMeshIndex] = new float3[triangles.Length / 3];
 
             for (var i = 0; i < triangles.Length; i += 3)
             {
@@ -62,49 +63,50 @@ public static class NormalSolver
                 // Calculate the normal of the triangle
                 float3 p1 = vertices[i2] - vertices[i1];
                 float3 p2 = vertices[i3] - vertices[i1];
-                float3 normal = Vector3.Cross(p1, p2).normalized;
+                float3 normal = math.normalize(math.cross(p1, p2));
                 int triIndex = i / 3;
                 triNormals[subMeshIndex][triIndex] = normal;
 
-                List<VertexEntry> entry;
                 VertexKey key;
 
-                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i1]), out entry))
+                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i1]), out var entry))
                 {
-                    entry = new List<VertexEntry>(4);
+                    entry = new NativeList<VertexEntry>(4,Allocator.Temp);
                     dictionary.Add(key, entry);
                 }
                 entry.Add(new VertexEntry(subMeshIndex, triIndex, i1));
 
-                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i2]), out entry))
+                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i2]), out var entry2))
                 {
-                    entry = new List<VertexEntry>();
-                    dictionary.Add(key, entry);
+                    entry2 = new NativeList<VertexEntry>(Allocator.Temp);
+                    dictionary.Add(key, entry2);
                 }
-                entry.Add(new VertexEntry(subMeshIndex, triIndex, i2));
+                entry2.Add(new VertexEntry(subMeshIndex, triIndex, i2));
 
-                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i3]), out entry))
+                if (!dictionary.TryGetValue(key = new VertexKey(vertices[i3]), out var entry3))
                 {
-                    entry = new List<VertexEntry>();
-                    dictionary.Add(key, entry);
+                    entry3 = new NativeList<VertexEntry>(Allocator.Temp);
+                    dictionary.Add(key, entry3);
                 }
-                entry.Add(new VertexEntry(subMeshIndex, triIndex, i3));
+                entry3.Add(new VertexEntry(subMeshIndex, triIndex, i3));
             }
         }
+        _collectTrianglesMarker.End();
 
-        // Each entry in the dictionary represents a unique vertex position.
-
-        foreach (var vertList in dictionary.Values)
+        _processVerticesMarker.Begin();
+        // Each entry in the dictionary represents a unique vertex position
+        var valueArray = dictionary.GetValueArray(Allocator.Temp);
+        for (var i = 0; i < valueArray.Length; ++i)
         {
-            for (var i = 0; i < vertList.Count; ++i)
+            var vertList = valueArray[i];
+            for (var j = 0; j < vertList.Length; ++j)
             {
+                var sum = new float3();
+                var lhsEntry = vertList[j];
 
-                var sum = new Vector3();
-                var lhsEntry = vertList[i];
-
-                for (var j = 0; j < vertList.Count; ++j)
+                for (var k = 0; k < vertList.Length; ++k)
                 {
-                    var rhsEntry = vertList[j];
+                    var rhsEntry = vertList[k];
 
                     if (lhsEntry.VertexIndex == rhsEntry.VertexIndex)
                     {
@@ -114,7 +116,7 @@ public static class NormalSolver
                     {
                         // The dot product is the cosine of the angle between the two triangles.
                         // A larger cosine means a smaller angle.
-                        var dot = Vector3.Dot(
+                        var dot = math.dot(
                             triNormals[lhsEntry.MeshIndex][lhsEntry.TriangleIndex],
                             triNormals[rhsEntry.MeshIndex][rhsEntry.TriangleIndex]);
                         if (dot >= cosineThreshold)
@@ -124,11 +126,15 @@ public static class NormalSolver
                     }
                 }
 
-                normals[lhsEntry.VertexIndex] = sum.normalized;
+                normals[lhsEntry.VertexIndex] = math.normalize(sum);
             }
         }
-
-        mesh.normals = normals;
+        _processVerticesMarker.End();
+        mesh.SetNormals<float3>(normals);
+        
+        valueArray.Dispose();
+        normals.Dispose();
+        dictionary.Dispose();
     }
 
     private struct VertexKey : System.IEquatable<VertexKey>

@@ -8,10 +8,10 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 using UnityEngine.Rendering;
 using UnityEngine.Pool;
+using Unity.Profiling;
 
 // ReSharper disable All
 
@@ -99,14 +99,21 @@ public class MarchingSquaresTerrain : MonoBehaviour
     // private int _numVoteThreadGroups;
     // private int _numGroupScanThreadGroups;
     
+    static ProfilerMarker _detailUpdateMarker = new ProfilerMarker("MarchingSquaresTerrain.UpdateDetails");
+    static ProfilerMarker _detailRaycastMarker = new ProfilerMarker("MarchingSquaresTerrain.DetailRaycast");
+    
+    static ProfilerMarker _chunkAddMarker = new ProfilerMarker("MarchingSquaresTerrain.AddChunk");
+    static ProfilerMarker _chunkRemMarker = new ProfilerMarker("MarchingSquaresTerrain.RemoveChunk");
+    static ProfilerMarker _chunkMergeMarker = new ProfilerMarker("MarchingSquaresTerrain.MergeChunks");
+    
+    static ProfilerMarker _meshNormalMarker = new ProfilerMarker("MarchingSquaresTerrain.RecalculateNormals");
+    static ProfilerMarker _meshCombineMarker = new ProfilerMarker("MarchingSquaresTerrain.CombineMeshes");
+    
+    static ProfilerMarker _drawColorsMarker = new ProfilerMarker("MarchingSquaresTerrain.DrawColors");
+    
     private Camera _camera;
     private bool _useCulling;
     private uint[] _args = new uint[] { 0, 0, 0, 0, 0 };
-
-    private int[] _triCache;
-    private Vector3[] _normCache;
-    private Vector3[] _vertCache;
-    private Color[] _colorCache;
 
     
     private CloudSettings _lastCloudSettings;
@@ -114,15 +121,22 @@ public class MarchingSquaresTerrain : MonoBehaviour
     private MaterialPropertyBlock _mpb;
     
     public Vector3Int dimensions = new Vector3Int(10, 10, 10);
+    
+    private Bounds _TotalTerrainSizeCache;
     public Bounds TotalTerrainSize
     {
         get
         {
+            if (_TotalTerrainSizeCache.size != Vector3.zero)
+                return _TotalTerrainSizeCache;
+            
             var cB = new Bounds();
-            if (GetComponent<MeshFilter>().sharedMesh != null) {
-                cB = GetComponent<MeshFilter>().sharedMesh.bounds;
+            foreach (var chunk in chunks)
+            {
+                cB.Encapsulate(chunk.Value.GetComponent<Collider>().bounds);
             }
-            return cB;
+            _TotalTerrainSizeCache = cB;
+            return _TotalTerrainSizeCache;
         }
     }
     public Vector2 cellSize = new Vector2(2, 2);
@@ -321,7 +335,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _args = new uint[5] { detailMesh.GetIndexCount(0), (uint)instancingData.GetDetailCount(), detailMesh.GetIndexStart(0), detailMesh.GetBaseVertex(0), 0 };
 
         _mpb ??= new MaterialPropertyBlock();
-        //_voteBuffer == null || _scanBuffer == null || _groupSumArrayBuffer == null || _scannedGroupSumBuffer == null || _resultBuffer == null
         if (_detailBuffer == null)
         {
             var data = instancingData.GetDetailData();
@@ -407,17 +420,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
             return;
         }
 
-        //Return if the detail is out of bounds
-        if (!TotalTerrainSize.Contains(detailPos))
-        {
-            return;
-        }
-
         var list = ListPool<MarchingSquaresChunk>.Get();
+
         var chunksAtWorldPosition = GetChunksAtWorldPosition(detailPos,ref list);
         if (chunksAtWorldPosition.Count == 0)
             return;
-
+        
         MarchingSquaresChunk c = chunksAtWorldPosition[0];
 
         bool canPlace = true;
@@ -497,7 +505,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
          * and set the height of the detail object to the hit point.If the hit point is null, 
          * we don't add the detail object to the new list.
          */
-        Profiler.BeginSample("Update terrain detail height raycast job");
         for (int i = 0; i < count; i++)
         {
             DetailObject d = instancingData.detailChunks[chunkPos][i];
@@ -518,12 +525,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
         handle.Complete();
         
-        Profiler.EndSample();
 
         var index = 0;
 
 
-        Profiler.BeginSample("Update terrain detail height -- calculate detail normal");
         
         foreach (var hit in results)
         {
@@ -532,13 +537,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 index++;
                 continue;
             }
-            if (_normCache == null || _triCache == null)
+
+            if (!hit.collider.GetComponent<MarchingSquaresChunk>())
             {
-                _normCache = GetComponent<MeshFilter>().sharedMesh.normals;
-                _triCache = GetComponent<MeshFilter>().sharedMesh.triangles;
-                _vertCache = GetComponent<MeshFilter>().sharedMesh.vertices;
-                _colorCache = GetComponent<MeshFilter>().sharedMesh.colors;
+                index++;
+                continue;
             }
+            MarchingSquaresChunk hitChunk = hit.collider.GetComponent<MarchingSquaresChunk>();
 
             DetailObject d = instancingData.detailChunks[chunkPos][index];
             Vector3 pos = hit.point;
@@ -552,26 +557,27 @@ public class MarchingSquaresTerrain : MonoBehaviour
             var triIdx1 = hit.triangleIndex * 3;
             var triIdx2 = hit.triangleIndex * 3 + 1;
             var triIdx3 = hit.triangleIndex * 3 + 2;
-            if (triIdx1 < 0 || triIdx2 < 0 || triIdx3 < 0 || triIdx1 >= _triCache.Length || triIdx2 >= _triCache.Length || triIdx3 >= _triCache.Length)
+            if (triIdx1 < 0 || triIdx2 < 0 || triIdx3 < 0 || triIdx1 >= hitChunk.triCache.Count || triIdx2 >= hitChunk.triCache.Count || triIdx3 >= hitChunk.triCache.Count)
             {
                 index++;
                 continue;
             }
-            int tri1 = _triCache[triIdx1];
-            int tri2 = _triCache[triIdx2];
-            int tri3 = _triCache[triIdx3];
+            int tri1 = hitChunk.triCache[triIdx1];
+            int tri2 = hitChunk.triCache[triIdx2];
+            int tri3 = hitChunk.triCache[triIdx3];
             
-            Vector3 n0 = _normCache[tri1];
-            Vector3 n1 = _normCache[tri2];
-            Vector3 n2 = _normCache[tri3];
+            Vector3 n0 = hitChunk.normCache[tri1];
+            Vector3 n1 = hitChunk.normCache[tri2];
+            Vector3 n2 = hitChunk.normCache[tri3];
             
-            Color c0 = _colorCache[tri1];
-            Color c1 = _colorCache[tri2];
-            Color c2 = _colorCache[tri3];
+            Color c0 = hitChunk.colorCache[tri1];
+            Color c1 = hitChunk.colorCache[tri2];
+            Color c2 = hitChunk.colorCache[tri3];
             
             var baryCenter = hit.barycentricCoordinate;
             var interpolatedNormal = n0 * baryCenter.x + n1 * baryCenter.y + n2 * baryCenter.z;
             bool canPlace = true;
+            
             if (checkColors)
             {
 
@@ -597,8 +603,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
             if (canPlace)
             {
                 interpolatedNormal = interpolatedNormal.normalized;
-                interpolatedNormal = hit.transform.TransformDirection(interpolatedNormal);
+                interpolatedNormal = hit.collider.transform.TransformDirection(interpolatedNormal);
                 var trs = float4x4.TRS(pos + Vector3.up * d.normalOffset, Quaternion.identity, size);
+
                 newDetailList.Add(new DetailObject()
                 {
                     trs = trs,
@@ -609,9 +616,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             
             index++;
         }
-
-        Profiler.EndSample();
-
+        
         results.Dispose();
         commands.Dispose();
 
@@ -736,12 +741,17 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #region Chunk Functions
     public void AddNewChunk(int chunkX, int chunkY)
     {
+        _chunkAddMarker.Begin();
         var chunkCoords = new Vector2Int(chunkX, chunkY);
         var newChunk = new GameObject("Chunk " + chunkCoords);
 
         var chunk = newChunk.AddComponent<MarchingSquaresChunk>();
-        newChunk.AddComponent<MeshFilter>();
+        var mf = newChunk.AddComponent<MeshFilter>();
+        var mr = newChunk.AddComponent<MeshRenderer>();
+        var mc = newChunk.AddComponent<MeshCollider>();
+        mr.material = terrainMaterial;
         newChunk.layer = gameObject.layer;
+        
 
         AddChunk(chunkCoords, chunk);
 
@@ -832,11 +842,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
             downLeftChunk.neighboringChunks.Add(chunk);
             chunk.neighboringChunks.Add(downLeftChunk);
         }
-
-
-
+        _chunkAddMarker.End();
+        
         chunk.RegenerateMesh();
-        MergeChunks();
     }
 
     public void GenerateTerrain()
@@ -888,6 +896,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
     public void RemoveChunk(Vector2Int coords)
     {
+        _TotalTerrainSizeCache = new Bounds();
         if (chunks.ContainsKey(coords))
         {
             if (chunks[coords] != null)
@@ -905,11 +914,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
             chunks.Remove(coords);
         }
 
-        MergeChunks();
     }
 
     void AddChunk(Vector2Int coords, MarchingSquaresChunk chunk, bool regenMesh = true)
     {
+        _TotalTerrainSizeCache = new Bounds();
         if (chunks.ContainsKey(coords))
         {
             DestroyImmediate(chunks[coords].gameObject);
@@ -938,15 +947,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
         {
             if (chunk.Value.isDirty)
             {
-                if(!shouldUpdateNormals && chunk.Value.updateNormals)
-                    shouldUpdateNormals = true;
-                
                 chunk.Value.RegenerateMesh();
                 toUpdate.Add(chunk.Value);
             }
         }
 
-        MergeChunks(shouldUpdateNormals);
         if (updateHeight)
         {
             foreach (var chunk in toUpdate)
@@ -957,46 +962,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
 
     // ReSharper disable Unity.PerformanceAnalysis
-    void MergeChunks(bool recalculateNormals = true)
-    {
-        Profiler.BeginSample("Terrain Mesh Combining");
-        
-        MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
-        CombineInstance[] combine = new CombineInstance[meshFilters.Length];
-        
-        int i = 0;
-        while (i < meshFilters.Length)
-        {
-
-
-            if (meshFilters[i].gameObject != gameObject)
-            {
-                combine[i].mesh = meshFilters[i].sharedMesh;
-                combine[i].transform = meshFilters[i].transform.localToWorldMatrix;
-            }
-
-            i++;
-        }
-
-        Mesh mesh = new Mesh();
-        mesh.CombineMeshes(combine);
-#if UNITY_EDITOR
-        Profiler.BeginSample("Recalculate Terrain Normals");
-        mesh.RecalculateNormals(45f);
-        mesh.Optimize();
-        Profiler.EndSample();
-#endif
-        Profiler.EndSample();
-
-        transform.GetComponent<MeshFilter>().sharedMesh = mesh;
-        transform.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial;
-        transform.GetComponent<MeshCollider>().sharedMesh = mesh;
-
-        _triCache = mesh.triangles;
-        _normCache = mesh.normals;
-        _vertCache = mesh.vertices;
-        _colorCache = mesh.colors;
-    }
     internal void DrawHeights(List<Vector3> worldCellPositions, float dragHeight, bool setHeight = false, bool flatten = false, float _selectedHeight = 0)
     {
         foreach (Vector3 worldCell in worldCellPositions)
@@ -1038,8 +1003,10 @@ public class MarchingSquaresTerrain : MonoBehaviour
         UpdateDirtyChunks();
     }
 
+    
     internal void DrawColors(List<Vector3> worldCellPositions, Vector3 paintPos, float brushSize, Color color, bool fallOff)
     {
+        _drawColorsMarker.Begin();
         var fallOffCurve = AnimationCurve.EaseInOut(0, 1, 1, 0);
         foreach (var worldCell in worldCellPositions)
         {
@@ -1058,6 +1025,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 chunk.DrawColor(localPos.x, localPos.y, fallOff ? Color.Lerp(color, color2, fallOffCurve.Evaluate(t)) : color);
             }
         }
+        _drawColorsMarker.End();
         UpdateDirtyChunks(false);
     }
 
@@ -1067,7 +1035,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
     /// <param name="worldCellPosition"></param>
     internal List<MarchingSquaresChunk> GetChunksAtWorldPosition(Vector3 worldCellPosition, ref List<MarchingSquaresChunk> chunksAtPosition)
     {
-        Profiler.BeginSample("Get Chunks At World Position");
         //Loop through every chunk and check if the world position is inside the chunk
         foreach (var chunk in chunks)
         {
@@ -1076,15 +1043,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
                 Mathf.FloorToInt((worldCellPosition.z - chunk.Value.transform.position.z) / cellSize.y)
             );
             var inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
-            Profiler.BeginSample("Check In Bounds");
             if (inBounds && !chunksAtPosition.Contains(chunk.Value))
             {
                 chunksAtPosition.Add(chunk.Value);
             }
-            Profiler.EndSample();
         }
 
-        Profiler.EndSample();
         return chunksAtPosition;
     }
     
@@ -1181,17 +1145,13 @@ public class MarchingSquaresTerrain : MonoBehaviour
     }
     
     
+    static ProfilerMarker _smoothHeightsMarker = new ProfilerMarker("Marching Squares Terrain.SmoothHeights");
 
     Dictionary<Vector3,List<float>> smoothHeights = new Dictionary<Vector3, List<float>>();
     internal void SmoothHeights(List<Vector3> cells)
     {
         
-        Profiler.BeginSample("Smoothing Heights Collect");
-        //Clear lists
-        foreach (var smoothHeightsValue in smoothHeights.Values)
-        {
-            smoothHeightsValue.Clear();
-        }
+        smoothHeights.Clear();
         
         foreach (var cell in cells)
         {
@@ -1208,6 +1168,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
                             0,
                             cell.z + z * cellSize.y
                         );
+                        
+                        _smoothHeightsMarker.Begin();
                         var listN = ListPool<MarchingSquaresChunk>.Get();
                         foreach (var nChunk in GetChunksAtWorldPosition(neighbor,ref listN))
                         {
@@ -1221,15 +1183,14 @@ public class MarchingSquaresTerrain : MonoBehaviour
                             else
                                 smoothHeights[cell].Add(height);
                         }
+                        
                         ListPool<MarchingSquaresChunk>.Release(listN);
+                        _smoothHeightsMarker.End();
                     }
                 }
             }
             ListPool<MarchingSquaresChunk>.Release(list);
         }
-        Profiler.EndSample();
-
-        Profiler.BeginSample("Smoothing Heights Apply");
         //Average the heights
         foreach (var cell in smoothHeights)
         {
@@ -1256,11 +1217,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             }
             ListPool<MarchingSquaresChunk>.Release(list);
         }
-        Profiler.EndSample();
-        
-        Profiler.BeginSample("Smoothing Heights Update Meshes");
         UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
-        Profiler.EndSample();
     }
     #endregion
 #region Misc Functions
@@ -1277,16 +1234,18 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public float GetHeightAtWorldPosition(Vector3 cellWorld)
     {
         
-        var list = ListPool<MarchingSquaresChunk>.Get();
-        var chunksAtWorldPosition = GetChunksAtWorldPosition(cellWorld,ref list);
-        foreach (var chunk in chunksAtWorldPosition)
+        foreach (var chunk in chunks)
         {
+            var c = chunk.Value;
             //Get the local cell position
             var localCellPos = new Vector2Int(
-                Mathf.FloorToInt((cellWorld.x - chunk.transform.position.x) / cellSize.x),
-                Mathf.FloorToInt((cellWorld.z - chunk.transform.position.z) / cellSize.y)
+                Mathf.FloorToInt((cellWorld.x - c.transform.position.x) / cellSize.x),
+                Mathf.FloorToInt((cellWorld.z - c.transform.position.z) / cellSize.y)
             );
-            return chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+            var inBounds = !(localCellPos.x < 0 || localCellPos.x >= dimensions.x || localCellPos.y < 0 || localCellPos.y >= dimensions.z);
+            if (!inBounds)
+                continue;
+            return c.heightMap[c.GetIndex(localCellPos.y, localCellPos.x)];
         }
         return 0;
     }

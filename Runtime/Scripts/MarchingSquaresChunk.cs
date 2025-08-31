@@ -8,23 +8,21 @@ using UnityEditor;
 using UnityEngine.Profiling;
 using UnityEngine.Serialization;
 
-//Job to generate the mesh for this chunk
-[System.Serializable]
 [BurstCompile(CompileSynchronously = true)]
-struct GenerateChunkJob : IJobParallelFor
+internal struct GenerateChunkJob : IJobParallelFor
 {
 
     [ReadOnly]
     [DeallocateOnJobCompletion]
     public NativeArray<float> HeightMap;
 
-    public int3 terrainSize;
-    public float2 cellSize;
-    public float mergeThreshold;
+    public int3 TerrainSize;
+    public float2 CellSize;
+    public float MergeThreshold;
 
     private bool _floorMode;
 
-    public bool higherPolyFloors;
+    public bool HigherPolyFloors;
 
     [NativeDisableParallelForRestriction]
     public NativeList<float3> Vertices;
@@ -67,24 +65,24 @@ struct GenerateChunkJob : IJobParallelFor
     public int GetIndex(int x, int z)
     {
         //Check if within bounds
-        if (x < 0 || x >= terrainSize.x || z < 0 || z >= terrainSize.z)
+        if (x < 0 || x >= TerrainSize.x || z < 0 || z >= TerrainSize.z)
         {
             return 0;
         }
 
-        return x + z * terrainSize.x;
+        return x + z * TerrainSize.x;
     }
 
     int2 GetCoordinates(int index)
     {
-        return new int2(index / terrainSize.x, index % terrainSize.x);
+        return new int2(index / TerrainSize.x, index % TerrainSize.x);
     }
 
     public void Execute(int index)
     {
         _cellCoords = GetCoordinates(index);
 
-        if (_cellCoords.x > terrainSize.x - 2 || _cellCoords.y > terrainSize.z - 2)
+        if (_cellCoords.x > TerrainSize.x - 2 || _cellCoords.y > TerrainSize.z - 2)
         {
             return;
         }
@@ -102,10 +100,10 @@ struct GenerateChunkJob : IJobParallelFor
         _cy = HeightMap[cyIndex];
         _dy = HeightMap[dyIndex];
 
-        _ab = Mathf.Abs(_ay - _by) < mergeThreshold; // Top Edge
-        _ac = Mathf.Abs(_ay - _cy) < mergeThreshold; // Bottom Edge
-        _bd = Mathf.Abs(_by - _dy) < mergeThreshold; // Right Edge
-        _cd = Mathf.Abs(_cy - _dy) < mergeThreshold; // Left Edge
+        _ab = Mathf.Abs(_ay - _by) < MergeThreshold; // Top Edge
+        _ac = Mathf.Abs(_ay - _cy) < MergeThreshold; // Bottom Edge
+        _bd = Mathf.Abs(_by - _dy) < MergeThreshold; // Right Edge
+        _cd = Mathf.Abs(_cy - _dy) < MergeThreshold; // Left Edge
 
         //Case 0
         if (_ab && _ac && _bd && _cd)
@@ -451,7 +449,7 @@ struct GenerateChunkJob : IJobParallelFor
         }
 
         if (caseFound) return;
-        Debug.Log("Case not found");
+        Debug.Log($"Case not found");
         return;
     }
 
@@ -475,7 +473,7 @@ struct GenerateChunkJob : IJobParallelFor
     private void AddFullFloor()
     {
         StartFloor();
-        if (higherPolyFloors)
+        if (HigherPolyFloors)
         {
             var ey = (_ay + _by + _cy + _dy) / 4;
             AddFace(
@@ -805,7 +803,7 @@ struct GenerateChunkJob : IJobParallelFor
 
 
 
-    private Vector3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
+    private float3 AddPoint(float x, float y, float z, float uvX = 0, float uvY = 0, bool diagMidpoint = false)
     {
         for (int i = 0; i < _r; i++)
         {
@@ -820,13 +818,13 @@ struct GenerateChunkJob : IJobParallelFor
         if (diagMidpoint)
         {
             var adColor = math.lerp(
-                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x],
-                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x + 1],
+                ColorMap[_cellCoords.y * TerrainSize.x + _cellCoords.x],
+                ColorMap[(_cellCoords.y + 1) * TerrainSize.x + _cellCoords.x + 1],
                 .5f
             );
             var bcColor = math.lerp(
-                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x + 1],
-                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x],
+                ColorMap[_cellCoords.y * TerrainSize.x + _cellCoords.x + 1],
+                ColorMap[(_cellCoords.y + 1) * TerrainSize.x + _cellCoords.x],
                 .5f
             );
 
@@ -850,13 +848,13 @@ struct GenerateChunkJob : IJobParallelFor
         {
 
             var abColor = math.lerp(
-                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x],
-                ColorMap[_cellCoords.y * terrainSize.x + _cellCoords.x + 1],
+                ColorMap[_cellCoords.y * TerrainSize.x + _cellCoords.x],
+                ColorMap[_cellCoords.y * TerrainSize.x + _cellCoords.x + 1],
                 x
             );
             var cdColor = math.lerp(
-                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x],
-                ColorMap[(_cellCoords.y + 1) * terrainSize.x + _cellCoords.x + 1],
+                ColorMap[(_cellCoords.y + 1) * TerrainSize.x + _cellCoords.x],
+                ColorMap[(_cellCoords.y + 1) * TerrainSize.x + _cellCoords.x + 1],
                 x
             );
             color = math.lerp(abColor, cdColor, z);
@@ -864,9 +862,9 @@ struct GenerateChunkJob : IJobParallelFor
 
         Colors.Add(new float4(color.x, color.y, color.z, color.w));
         float3 vert = new float3(
-            (_cellCoords.x + x) * cellSize.x,
+            (_cellCoords.x + x) * CellSize.x,
             y,
-            (_cellCoords.y + z) * cellSize.y
+            (_cellCoords.y + z) * CellSize.y
         );
         Uvs.Add(uv);
         return vert;
@@ -884,7 +882,6 @@ struct GenerateChunkJob : IJobParallelFor
         Triangles.Add(vertexCount);
 
         float3 normal = -math.normalize(math.cross(v1 - v0, v2 - v0));
-        //Get angle of normal
         float angle = math.degrees(math.acos(normal.y));
         
         Normals.Add(normal);
@@ -894,17 +891,17 @@ struct GenerateChunkJob : IJobParallelFor
 
     private bool IsHigher(float a, float b)
     {
-        return a - b > mergeThreshold;
+        return a - b > MergeThreshold;
     }
 
     private bool IsLower(float a, float b)
     {
-        return a - b < -mergeThreshold;
+        return a - b < -MergeThreshold;
     }
 
     private bool IsMerged(float a, float b)
     {
-        return Mathf.Abs(a - b) < mergeThreshold;
+        return Mathf.Abs(a - b) < MergeThreshold;
     }
 
 
@@ -935,6 +932,7 @@ public class MarchingSquaresChunk : MonoBehaviour
     public List<float3> vertCache;
     public List<float3> normCache;
     public List<int> triCache;
+    public List<Color> colorCache;
 
     public MarchingSquaresTerrain terrain;
     public Vector2Int chunkPosition;
@@ -943,7 +941,6 @@ public class MarchingSquaresChunk : MonoBehaviour
     public float4[] colorMap;
 
     public bool isDirty;
-    public bool updateNormals;
 
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
@@ -992,8 +989,11 @@ public class MarchingSquaresChunk : MonoBehaviour
         GenerateTerrainCells();
 
         var mf = gameObject.GetComponent<MeshFilter>();
+        var mc = gameObject.GetComponent<MeshCollider>();
+        
+        mesh.RecalculateNormals(45f);
         mf.sharedMesh = mesh;
-
+        mc.sharedMesh = mesh;
         isDirty = false;
     }
 
@@ -1022,10 +1022,10 @@ public class MarchingSquaresChunk : MonoBehaviour
             PointHeights = new NativeArray<float>(new float[4] { 0, 0, 0, 0 }, Allocator.Persistent),
 
             //Config
-            higherPolyFloors = true,
-            cellSize = terrain.cellSize,
-            terrainSize = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
-            mergeThreshold = terrain.mergeThreshold,
+            HigherPolyFloors = true,
+            CellSize = terrain.cellSize,
+            TerrainSize = new int3(terrain.dimensions.x, 0, terrain.dimensions.z),
+            MergeThreshold = terrain.mergeThreshold,
         };
 
 
@@ -1048,6 +1048,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         vertCache = new List<float3>(_vertices.Length);
         normCache = new List<float3>(_normals.Length);
         triCache = new List<int>(_triangles.Length);
+        colorCache = new List<Color>(_colors.Length);
         foreach (var t in _vertices)
             vertCache.Add(t);
 
@@ -1056,6 +1057,9 @@ public class MarchingSquaresChunk : MonoBehaviour
 
         foreach (var t in _triangles)
             triCache.Add(t);
+        
+        foreach (var t in _colors)
+            colorCache.Add(new Color(t.x, t.y, t.z, t.w));
 
 
         mesh.SetVertices<float3>(_vertices);
@@ -1076,46 +1080,45 @@ public class MarchingSquaresChunk : MonoBehaviour
     public void GenerateHeightmap(NoiseSettings ns,Texture2D heightmap = null)
     {
         for (var z = 0; z < terrain.dimensions.z; z++)
+        {
+            for (var x = 0; x < terrain.dimensions.x; x++)
             {
-                for (var x = 0; x < terrain.dimensions.x; x++)
+
+                LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
+                    ns.frequency,
+                    ns.lacunarity,
+                    ns.persistence,
+                    ns.octaves,
+                    ns.seed,
+                    LibNoise.QualityMode.High
+                );
+                var point = new Vector3(x, 0, z);
+                //Convert local coordinates (0 - terrain.dimensions) to world coordinates (x - terrain.dimensions * cellSize)
+                float wX = (chunkPosition.x * (terrain.dimensions.x - 1)) + x;
+                float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
+
+                var noiseValue =
+                    (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
+                switch (ns.mixMode)
                 {
+                    case NoiseMixMode.Add:
+                        heightMap[GetIndex(z, x)] += noiseValue;
+                        break;
+                    case NoiseMixMode.Subtract:
+                        heightMap[GetIndex(z, x)] -= noiseValue;
+                        break;
+                    case NoiseMixMode.Multiply:
+                        heightMap[GetIndex(z, x)] *= noiseValue;
+                        break;
+                    case NoiseMixMode.Replace:
+                        heightMap[GetIndex(z, x)] = noiseValue;
+                        break;
 
-                    LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
-                        ns.frequency,
-                        ns.lacunarity,
-                        ns.persistence,
-                        ns.octaves,
-                        ns.seed,
-                        LibNoise.QualityMode.High
-                    );
-                    var point = new Vector3(x, 0, z);
-                    //Convert local coordinates (0 - terrain.dimensions) to world coordinates (x - terrain.dimensions * cellSize)
-                    float wX = (chunkPosition.x * (terrain.dimensions.x - 1)) + x;
-                    float wZ = (chunkPosition.y * (terrain.dimensions.z - 1)) + z;
-
-                    var noiseValue =
-                        (float)perlin.GetValue((wX * ns.scale) + ns.offset.x, (wZ * ns.scale) + ns.offset.y, 0);
-                    switch (ns.mixMode)
-                    {
-                        case NoiseMixMode.Add:
-                            heightMap[GetIndex(z, x)] += noiseValue;
-                            break;
-                        case NoiseMixMode.Subtract:
-                            heightMap[GetIndex(z, x)] -= noiseValue;
-                            break;
-                        case NoiseMixMode.Multiply:
-                            heightMap[GetIndex(z, x)] *= noiseValue;
-                            break;
-                        case NoiseMixMode.Replace:
-                            heightMap[GetIndex(z, x)] = noiseValue;
-                            break;
-
-                    }
                 }
             }
+        }
 
         isDirty = true;
-        updateNormals = true;
     }
 
     private bool InBounds(int x, int z)
@@ -1130,7 +1133,6 @@ public class MarchingSquaresChunk : MonoBehaviour
             return;
         heightMap[GetIndex(z, x)] = setHeight ? y : heightMap[GetIndex(z, x)] + y;
         isDirty = true;
-        updateNormals = true;
     }
 
 
@@ -1156,7 +1158,6 @@ public class MarchingSquaresChunk : MonoBehaviour
         }
         Profiler.EndSample();
         isDirty = true;
-        updateNormals = true;
     }
 
     public void DrawColor(int x, int z, Color color)
@@ -1165,7 +1166,6 @@ public class MarchingSquaresChunk : MonoBehaviour
             return;
         colorMap[GetIndex(x, z)] = color.ToFloat4();
         isDirty = true;
-        updateNormals = false;
     }
 
     internal void DrawColors(List<Vector2Int> value, Color color)
@@ -1177,6 +1177,5 @@ public class MarchingSquaresChunk : MonoBehaviour
             colorMap[GetIndex((int)value[i].x, (int)value[i].y)] = color.ToFloat4();
         }
         isDirty = true;
-        updateNormals = false;
     }
 }

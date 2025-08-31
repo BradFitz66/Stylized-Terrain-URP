@@ -1,3 +1,4 @@
+using Unity.Profiling;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.Serialization;
@@ -9,7 +10,9 @@ public class MarchingSquaresTerrainEditor : Editor
 
     [FormerlySerializedAs("_currentHandle")] [SerializeField] private int currentHandle;
 
-
+    static ProfilerMarker _handleEventMarker = new ProfilerMarker("Handle Event");
+    static ProfilerMarker _onSceneGUIMarker = new ProfilerMarker("On Scene GUI");
+    static ProfilerMarker _onInspectorGUIMarker = new ProfilerMarker("On Inspector GUI");
 
     MarchingSquaresTerrain t;
     SerializedProperty _terrainDimensions;
@@ -93,6 +96,7 @@ public class MarchingSquaresTerrainEditor : Editor
 
     public override void OnInspectorGUI()
     {
+        _onInspectorGUIMarker.Begin();
         t = (MarchingSquaresTerrain)target;
         EditorGUILayout.PropertyField(_instancingData);
 
@@ -184,6 +188,7 @@ public class MarchingSquaresTerrainEditor : Editor
 
         serializedObject.ApplyModifiedProperties();
         EditorPrefs.SetBool("ShowGenerateGrassSettings", true);
+        _onInspectorGUIMarker.End();
 
     }
 
@@ -192,6 +197,7 @@ public class MarchingSquaresTerrainEditor : Editor
     public void OnSceneGUI()
     {
 
+        _onSceneGUIMarker.Begin();
         if (t == null)
             return;
         HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
@@ -207,10 +213,12 @@ public class MarchingSquaresTerrainEditor : Editor
             _currentToolInstance.DrawHandles();
             HandleEvent(_currentToolInstance);
         }
+        _onSceneGUIMarker.End();
     }
 
     void HandleEvent(TerrainTool tool)
     {
+        _handleEventMarker.Begin();
         var current = Event.current;
         switch (current.type)
         {
@@ -224,6 +232,7 @@ public class MarchingSquaresTerrainEditor : Editor
                 tool.OnMouseUp(current.button);
                 break;
         }
+        _handleEventMarker.End();
     }
 
     private void OnDisable()

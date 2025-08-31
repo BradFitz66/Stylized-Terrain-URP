@@ -2,11 +2,19 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using Codice.Client.BaseCommands;
+using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine.Pool;
+using UnityEngine.Rendering;
 
 [System.Serializable]
 public class SculptBrush : TerrainTool
 {
+    static ProfilerMarker _drawHandlesMarker = new ProfilerMarker("Sculpt Brush Draw Handles");
+    static ProfilerMarker _updateMarker = new ProfilerMarker("Sculpt Brush Update");
+    static ProfilerMarker _onMouseDragMarker = new ProfilerMarker("Sculpt Brush On Mouse Drag");
 
     private Vector3 _mousePosition;
     private Vector3 _cellPosWorld;
@@ -27,8 +35,8 @@ public class SculptBrush : TerrainTool
     private float _selectedHeight;
     private float _selectedHeightThreshold = 0.1f;
     private bool _selectedHeightOnly;
-    
 
+    
     //cell world position, chunkPos
     private List<Vector3> _selectedCells;
     private List<Vector3> _smoothingCells;
@@ -55,39 +63,45 @@ public class SculptBrush : TerrainTool
         _setHeight = EditorPrefs.GetFloat("setHeight_SCULPTBRUSH", 0);
 		_smoothingCells = new List<Vector3>();
         _selectedCells = new List<Vector3>();
+        InitializeInstancingInfo();
+
+    }
+    
+    void InitializeInstancingInfo()
+    {
+        HandleMaterial = new Material(Shader.Find("Custom/TerrainHandlesInstanced"));
+        HandleMesh = Resources.GetBuiltinResource<Mesh>("Quad.fbx");
+        HandleBuffer = new ComputeBuffer(MaxHandleCount, Marshal.SizeOf(typeof(BrushHandleInstance))); 
+
+        RenderParameters = new RenderParams(HandleMaterial);
+        RenderParameters.worldBounds = new Bounds(Vector3.zero, Vector3.one * 10000);
+        RenderParameters.matProps = new MaterialPropertyBlock();
+    }
+
+    public override void ToolDeselected()
+    {
+        
+        HandleBuffer?.Dispose();
+        
     }
 
 
     public override void DrawHandles()
     {
-        _style.normal.textColor = Color.black;
+        if (HandleMaterial == null || HandleBuffer == null || HandleMesh == null)
+        {
+            
+            InitializeInstancingInfo();
+            return;
+        }
 
+        _style.normal.textColor = Color.black;
         Handles.color = Color.green;
         if (_state != ToolState.DraggingHeight)
         {
             Handles.DrawSolidDisc(_cellPosWorld + Vector3.up * _hoveredCellHeight,Vector3.up, _brushSize / 2);
         }
-       
-        foreach (var pos in _selectedCells)
-        {
-            var list = ListPool<MarchingSquaresChunk>.Get();
-            List<MarchingSquaresChunk> chunks = t.GetChunksAtWorldPosition(pos, ref list);
-            if (chunks.Count > 0)
-            {
-                //We don't really need to be accurate with this, so just get the first chunk that contains the pos
-                MarchingSquaresChunk c = chunks[0];
-                Vector2Int localCell = new Vector2Int(
-                    Mathf.FloorToInt((pos.x - c.transform.position.x) / t.cellSize.x),
-                    Mathf.FloorToInt((pos.z - c.transform.position.z) / t.cellSize.y)
-                );
-
-                Handles.color = new Color(0, 1, 0, .5f);
-
-                float cellHeight = c.heightMap[c.GetIndex(localCell.y, localCell.x)];
-                Handles.DrawSolidDisc(pos + Vector3.up * (cellHeight + _dragHeight), Vector3.up, t.cellSize.x / 2);
-            }
-        }
-
+        
         //Draw wire around hovered chunk
         if (t.chunks.ContainsKey(_chunkPos))
         {
@@ -100,6 +114,7 @@ public class SculptBrush : TerrainTool
             Handles.DrawWireCube(chunkWorldPos, _totalTerrainSize);
         }
 
+        
         Handles.color = Color.black;
         //Draw text to indicate current state
         switch(_state)
@@ -127,6 +142,8 @@ public class SculptBrush : TerrainTool
                 Handles.color = Color.black;
                 break;
         }
+
+        Graphics.RenderMeshPrimitives(RenderParameters, HandleMesh, 0, _selectedCells.Count);
     }
     public override void OnMouseDown(int button = 0)
     {
@@ -160,14 +177,10 @@ public class SculptBrush : TerrainTool
 
     private void GenerateSlope()
     {
-        //Get world position of slope points
         
         
         float height1 = t.GetHeightAtWorldPosition(_slopePoint1);
         float height2 = t.GetHeightAtWorldPosition(_slopePoint2);
-        
-        Debug.Log($"Slope point 1: {_slopePoint1}, height: {height1}");
-        Debug.Log($"Slope point 2: {_slopePoint2}, height: {height2}");
         
         Vector3 direction = (_slopePoint2 - _slopePoint1).normalized;
         float distance = Vector3.Distance(_slopePoint1, _slopePoint2);
@@ -182,16 +195,13 @@ public class SculptBrush : TerrainTool
         {
             Vector3 pos = _slopePoint1 + step * i;
             float height = height1 + heightStep * i;
-            // slopeCells.Add(pos.Snap(t.cellSize.x, 1, t.cellSize.y));
-            // slopeHeights.Add(height);
-            //Also add cells in brush size radius
             for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
             {
                 for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
                 {
                     Vector3 p = new Vector3(x, 0, y);
                     Vector3 mouseOffset = pos + p;
-                    //Snap to cell size
+
                     Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
 
                     bool insideRadius = Vector3.Distance(pos.Snap(t.cellSize.x, 1, t.cellSize.y), mouseOffset) <= _brushSize / 2;
@@ -209,16 +219,20 @@ public class SculptBrush : TerrainTool
 
     }
 
+    static ProfilerMarker _smoothHeightCollect = new ProfilerMarker("Sculpt Brush Smooth Height Collect Cells");
     public override void OnMouseDrag(Vector2 delta)
     {
+        _onMouseDragMarker.Begin();
         switch(_state)
         {
             case ToolState.DraggingHeight:
                 _dragHeight += -delta.y * 0.1f;
+                RenderParameters.matProps.SetFloat("_HeightOffset", _dragHeight);
                 break;
             case ToolState.SmoothingHeight:
                 if (!_mouseDown)
                     return;
+                _smoothHeightCollect.Begin();
                 for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
                 {
                     for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
@@ -234,12 +248,45 @@ public class SculptBrush : TerrainTool
                         }
                     }
                 }
+                _smoothHeightCollect.End();
 
                 t.SmoothHeights(_smoothingCells);
                 _smoothingCells.Clear();
                 break;
-                
+            case ToolState.SelectingCells:
+                for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
+                {
+                    for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
+                    {
+                        Vector3 p = new Vector3(x, 0, y);
+                        Vector3 mouseOffset = _mousePosition + p;
+                        //Snap to cell size
+                        Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
+                        float height = t.GetHeightAtWorldPosition(cellWorld);
+                        bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= _brushSize / 2;
+                        
+                        int chunksAtPos = t.GetAmountOfChunksAtWorldPosition(cellWorld);
+                        
+                        if (insideRadius && !_selectedCells.Contains(cellWorld) && chunksAtPos>0)
+                        {
+
+                            if (_selectedHeightOnly && Mathf.Abs(height - _selectedHeight) > _selectedHeightThreshold)
+                                continue;
+                            _selectedCells.Add(cellWorld);
+                            HandleInstances.Add(new BrushHandleInstance()
+                            {
+                                matrix = float4x4.TRS(cellWorld + Vector3.up * (height + 0.5f), quaternion.Euler(math.radians(90),0,0), new float3(t.cellSize.x*.75f, t.cellSize.y*.75f, 1.0f))
+                            });
+                            HandleBuffer?.SetData(HandleInstances);
+                            RenderParameters.matProps.SetBuffer("_TerrainHandles", HandleBuffer);
+                            
+                        }
+                    }
+                }
+                break;
+
         }
+        _onMouseDragMarker.End();
     }
 
 
@@ -255,6 +302,7 @@ public class SculptBrush : TerrainTool
                     _state = ToolState.SelectedCells;
                 else
                     _state = ToolState.None;
+                
                 break;
             case ToolState.DraggingHeight:
                 t.DrawHeights(_selectedCells, _dragHeight, _flattenGeometry, _flattenGeometry, _selectedHeight);
@@ -274,6 +322,7 @@ public class SculptBrush : TerrainTool
     private GUIContent _selectedHeightOnlyLabel = new GUIContent("Selected Height Only", "Only select cells with a similar height to the height of the cell that was first clicked on.");
     public override void OnInspectorGUI()
     {
+        
         base.OnInspectorGUI();
         _flattenGeometry = EditorGUILayout.Toggle(_flattenLabel, _flattenGeometry);
         _selectedHeightOnly = EditorGUILayout.Toggle(_selectedHeightOnlyLabel, _selectedHeightOnly);
@@ -290,6 +339,7 @@ public class SculptBrush : TerrainTool
     }
     public override void Update()
     {
+        _updateMarker.Begin();
         if(_selectedCells == null)
             _selectedCells = new List<Vector3>();
 
@@ -301,17 +351,21 @@ public class SculptBrush : TerrainTool
         if (_state == ToolState.None && _selectedCells.Count > 0)
         {
             _selectedCells.Clear();
+            HandleInstances.Clear();
+            HandleBuffer = new ComputeBuffer(MaxHandleCount, Marshal.SizeOf(typeof(BrushHandleInstance))); 
+            RenderParameters.matProps.SetBuffer("_TerrainHandles", HandleBuffer);
+            RenderParameters.matProps.SetFloat("_HeightOffset", 0);
+
         }
 
         var ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         var groundPlane = new Plane(Vector3.up, t.transform.position);
         groundPlane.Raycast(ray, out var distance);
-        var hit = Physics.Raycast(ray, out var hitInfo,100, 1 << t.gameObject.layer);
+        var hit = Physics.Raycast(ray, out var hitInfo,1000, 1 << t.gameObject.layer);
         _mousePosition = hit ? new Vector3(hitInfo.point.x,0,hitInfo.point.z) : ray.GetPoint(distance);
 
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.LeftShift)
         {
-            Debug.Log("Setting height");
             _state = ToolState.SmoothingHeight;
         }
         else if (Event.current.type == EventType.KeyUp && Event.current.keyCode == KeyCode.LeftShift)
@@ -347,31 +401,6 @@ public class SculptBrush : TerrainTool
             Mathf.FloorToInt(_mousePosition.z / _totalTerrainSize.z)
         );
 
-        if(_state == ToolState.SelectingCells)
-        {
-            for (int y = -Mathf.FloorToInt(_brushSize / 2); y <= Mathf.FloorToInt(_brushSize / 2); y++)
-            {
-                for (int x = -Mathf.FloorToInt(_brushSize / 2); x <= Mathf.FloorToInt(_brushSize / 2); x++)
-                {
-                    Vector3 p = new Vector3(x, 0, y);
-                    Vector3 mouseOffset = _mousePosition + p;
-                    //Snap to cell size
-                    Vector3 cellWorld = mouseOffset.Snap(t.cellSize.x, 1, t.cellSize.y);
-                    float height = t.GetHeightAtWorldPosition(cellWorld);
-                    bool insideRadius = Vector3.Distance(_mousePosition.Snap(t.cellSize.x,1,t.cellSize.y), mouseOffset) <= _brushSize / 2;
-
-                    if (insideRadius && !_selectedCells.Contains(cellWorld))
-                    {
-                        if (_selectedHeightOnly && Mathf.Abs(height - _selectedHeight) > _selectedHeightThreshold)
-                            continue;
-                        
-                        _selectedCells.Add(cellWorld);
-                    }
-                }
-            }
-        }
-
-
         _cellPosWorld = _mousePosition.Snap(t.cellSize.x, 1, t.cellSize.y);
 
         //Get cell pos (0 - dimensions.x, 0 - dimensions.z)
@@ -386,6 +415,8 @@ public class SculptBrush : TerrainTool
                 _hoveredCellHeight = t.chunks[_chunkPos].heightMap[t.chunks[_chunkPos].GetIndex(_cellPos.y, _cellPos.x)];
             }
         }
+        _updateMarker.End();
     }
+    
 }
 #endif
