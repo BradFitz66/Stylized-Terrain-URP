@@ -79,11 +79,6 @@ public enum GrassVertexColorMask
     Blue = 1 << 2,
     Alpha = 1 << 3,
 }
-
-
-[RequireComponent(typeof(MeshFilter))]
-[RequireComponent(typeof(MeshRenderer))]
-[RequireComponent(typeof(MeshCollider))]
 [ExecuteInEditMode]
 public class MarchingSquaresTerrain : MonoBehaviour
 {
