@@ -291,7 +291,6 @@ public class SculptBrush : TerrainTool
     {
         if(button != 0)
             return;
-        Debug.Log("Current state: " + _state);
         switch (_state)
         {
             case ToolState.SelectingCells:
@@ -321,6 +320,7 @@ public class SculptBrush : TerrainTool
     {
         
         base.OnInspectorGUI();
+        
         _flattenGeometry = EditorGUILayout.Toggle(_flattenLabel, _flattenGeometry);
         _selectedHeightOnly = EditorGUILayout.Toggle(_selectedHeightOnlyLabel, _selectedHeightOnly);
         if (_selectedHeightOnly)

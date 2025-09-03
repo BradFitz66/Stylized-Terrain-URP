@@ -83,7 +83,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Ground3:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 10309, guid: 0000000000000000f000000000000000, type: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Ground4:
@@ -171,8 +171,8 @@ Material:
     - _GlossyReflections: 0
     - _Grass_Tiling: 0.5
     - _LIGHT_COOKIES: 1
-    - _LedgeBottomThickness: 1
-    - _LedgeTopThickness: 1
+    - _LedgeBottomThickness: 1.11
+    - _LedgeTopThickness: 1.07
     - _MAIN_LIGHT_SHADOWS_CASCADE: 1
     - _Metallic: 0
     - _OcclusionStrength: 1

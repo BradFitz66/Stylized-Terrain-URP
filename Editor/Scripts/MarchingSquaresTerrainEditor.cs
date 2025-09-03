@@ -66,6 +66,7 @@ public class MarchingSquaresTerrainEditor : Editor
         {
             _tools.arraySize = 4;
         }
+        
         if (_tools.GetArrayElementAtIndex(0).objectReferenceValue == null)
             _tools.GetArrayElementAtIndex(0).objectReferenceValue = CreateInstance<ChunkBrush>();
 

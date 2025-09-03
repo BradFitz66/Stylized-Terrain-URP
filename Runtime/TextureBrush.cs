@@ -21,6 +21,8 @@ public class TextureBrush : TerrainTool
     private GUIContent[] _textureContent;
 
     private bool _mouseDown;
+    private bool _selectedHeightOnly;
+    private float _selectedHeight = 0;
     private bool _fallOff;
     private int _selectedTexture;
     private float _brushSize = 2;
@@ -29,9 +31,10 @@ public class TextureBrush : TerrainTool
     private GUIStyle _labelStyle;
     private AnimationCurve _falloffCurve = AnimationCurve.Linear(0,1,1,0);
     private Vector3 _mousePosition;
+    private bool _samplingHeight;
+    private readonly GUIStyle _style = new GUIStyle();
 
-    
-    
+
     public override void DrawHandles()
     {
         if (!HandleMaterial || HandleBuffer == null || !HandleBuffer.IsValid() || !HandleMesh)
@@ -69,6 +72,8 @@ public class TextureBrush : TerrainTool
                     : 0;
                 
                 var height = t.GetHeightAtWorldPosition(cellWorld);
+                if(_selectedHeightOnly && Mathf.Approximately(height, _selectedHeight) == false)
+                    continue;
                 
                 var newInstance = new BrushHandleInstance()
                 {
@@ -82,17 +87,16 @@ public class TextureBrush : TerrainTool
                 };
                 
                 //Make sure HandleInstances doesn't already contain this instance
-                if(HandleInstances.Contains(newInstance))
-                    continue;
+                // if(HandleInstances.Contains(newInstance))
+                //     continue;
 
                 HandleInstances.Add(newInstance);
                 _selectedCells.Add(cellWorld);
-                HandleBuffer?.SetData(HandleInstances, 0, 0, HandleInstances.Count);
-                RenderParameters.matProps?.SetBuffer("_TerrainHandles", HandleBuffer);
-
             }
         }
-
+        
+        HandleBuffer?.SetData(HandleInstances, 0, 0, HandleInstances.Count);
+        RenderParameters.matProps?.SetBuffer("_TerrainHandles", HandleBuffer);
         
 
         _collectCellsMarker.End();
@@ -104,9 +108,13 @@ public class TextureBrush : TerrainTool
         }
         _drawColorsMarker.End();
 
-        Graphics.RenderMeshPrimitives(RenderParameters, HandleMesh, 0,HandleInstances.Count);
+        if(HandleInstances.Count>0)
+            Graphics.RenderMeshPrimitives(RenderParameters, HandleMesh, 0,_selectedCells.Count);
+
         _selectedCells?.Clear();
         HandleInstances?.Clear();
+        if(_samplingHeight)
+            Handles.Label(_mousePosition + Vector3.up * 2, "Sampling height",_style);
     }
 
     void InitializeInstancingInfo()
@@ -161,8 +169,13 @@ public class TextureBrush : TerrainTool
 
     public override void OnMouseDown(int button = 0)
     {
-        if (button == 0)
+        if (button == 0 && !_samplingHeight)
             _mouseDown = true;
+        else if(button == 0 && _samplingHeight)
+        {
+            _selectedHeight = t.GetHeightAtWorldPosition(_mousePosition);
+            _samplingHeight = false;
+        }
     }
     public override void OnMouseUp(int button = 0)
     {
@@ -221,12 +234,20 @@ public class TextureBrush : TerrainTool
             {
                 _fallOff = true;
             }
+            if (Event.current.keyCode == KeyCode.LeftControl)
+            {
+                _samplingHeight = true;
+            }
         }
         else if (Event.current.type == EventType.KeyUp)
         {
             if (Event.current.keyCode == KeyCode.LeftShift)
             {
                 _fallOff = false;
+            }
+            if (Event.current.keyCode == KeyCode.LeftControl)
+            {
+                _samplingHeight = false;
             }
         }
     }
@@ -238,6 +259,7 @@ public class TextureBrush : TerrainTool
         base.OnInspectorGUI();
         EditorGUILayout.LabelField("Brush Size: " + _brushSize);
         EditorGUILayout.LabelField("Hold shift to enable falloff");
+        EditorGUILayout.LabelField("Hold ctrl and click to sample terrain height for paint selected height option");
 
         EditorGUILayout.Space();
         //selectedTexture = GUILayout.Toolbar(selectedTexture, textureContent,GUILayout.MaxHeight(32),GUILayout.MaxWidth(48*4));
@@ -260,6 +282,13 @@ public class TextureBrush : TerrainTool
         }
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
+        
+        EditorGUILayout.Space();
+        _selectedHeightOnly = EditorGUILayout.Toggle("Paint Selected Height Only", _selectedHeightOnly);
+        if (_selectedHeightOnly)
+        {
+            _selectedHeight = EditorGUILayout.FloatField("Selected Height", _selectedHeight);
+        }
     }
 }
 #endif

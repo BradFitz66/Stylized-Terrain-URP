@@ -1045,9 +1045,9 @@ public class MarchingSquaresChunk : MonoBehaviour
         _normals = job.Normals.AsArray();
 
         //memcpy vertices into vertCache
-        vertCache = new List<float3>(_vertices.Length);
-        normCache = new List<float3>(_normals.Length);
-        triCache = new List<int>(_triangles.Length);
+        vertCache =  new List<float3>(_vertices.Length);
+        normCache =  new List<float3>(_normals.Length);
+        triCache =   new List<int>(_triangles.Length);
         colorCache = new List<Color>(_colors.Length);
         foreach (var t in _vertices)
             vertCache.Add(t);
@@ -1073,6 +1073,7 @@ public class MarchingSquaresChunk : MonoBehaviour
         job.Triangles.Dispose();
         job.Uvs.Dispose();
         job.Normals.Dispose();
+        
         Profiler.EndSample();
 
     }

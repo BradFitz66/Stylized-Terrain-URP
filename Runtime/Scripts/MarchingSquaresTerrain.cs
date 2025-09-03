@@ -1135,7 +1135,6 @@ public class MarchingSquaresTerrain : MonoBehaviour
     
     
     static ProfilerMarker _smoothHeightsMarker = new ProfilerMarker("Marching Squares Terrain.SmoothHeights");
-
     Dictionary<Vector3,List<float>> smoothHeights = new Dictionary<Vector3, List<float>>();
     internal void SmoothHeights(List<Vector3> cells)
     {
@@ -1208,6 +1207,45 @@ public class MarchingSquaresTerrain : MonoBehaviour
         }
         UpdateDirtyChunks(); //Regenerate the meshes of all modified chunks
     }
+    
+    public void SetHeightsAlongSlope(List<Vector3> cellsToModify, Vector3 slopePoint1World, Vector3 slopePoint2World, bool flattenGeometry)
+    {            
+        var list = ListPool<MarchingSquaresChunk>.Get();
+        foreach (var cell in cellsToModify)
+        {
+            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell,ref list);
+            foreach (var chunk in chunksAtWorldPosition)
+            {
+                //Get the local cell position
+                var localCellPos = new Vector2Int(
+                    Mathf.FloorToInt((cell.x - chunk.transform.position.x) / cellSize.x),
+                    Mathf.FloorToInt((cell.z - chunk.transform.position.z) / cellSize.y)
+                );
+
+                //Project the cell position onto the slope line
+                var slopeDir = (slopePoint2World - slopePoint1World).normalized;
+                var toCell = (cell - slopePoint1World);
+                var projectedLength = Vector3.Dot(toCell, slopeDir);
+                var projectedPoint = slopePoint1World + slopeDir * projectedLength;
+
+                //Get the height at the projected point
+                float targetHeight = GetHeightAtWorldPosition(projectedPoint);
+
+                if (flattenGeometry)
+                {
+                    chunk.DrawHeight(localCellPos.x, localCellPos.y, targetHeight, true);
+                }
+                else
+                {
+                    float currentHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
+                    float newHeight = Mathf.Lerp(currentHeight, targetHeight, 0.1f);
+                    chunk.DrawHeight(localCellPos.x, localCellPos.y, newHeight, true);
+                }
+            }
+        }
+
+        UpdateDirtyChunks();
+    }    
     #endregion
 #region Misc Functions
     public void UpdateClouds()
@@ -1254,43 +1292,4 @@ public class MarchingSquaresTerrain : MonoBehaviour
 #endif
     }
 #endregion
-
-    public void SetHeightsAlongSlope(List<Vector3> cellsToModify, Vector3 slopePoint1World, Vector3 slopePoint2World, bool flattenGeometry)
-    {            
-        var list = ListPool<MarchingSquaresChunk>.Get();
-        foreach (var cell in cellsToModify)
-        {
-            var chunksAtWorldPosition = GetChunksAtWorldPosition(cell,ref list);
-            foreach (var chunk in chunksAtWorldPosition)
-            {
-                //Get the local cell position
-                var localCellPos = new Vector2Int(
-                    Mathf.FloorToInt((cell.x - chunk.transform.position.x) / cellSize.x),
-                    Mathf.FloorToInt((cell.z - chunk.transform.position.z) / cellSize.y)
-                );
-
-                //Project the cell position onto the slope line
-                var slopeDir = (slopePoint2World - slopePoint1World).normalized;
-                var toCell = (cell - slopePoint1World);
-                var projectedLength = Vector3.Dot(toCell, slopeDir);
-                var projectedPoint = slopePoint1World + slopeDir * projectedLength;
-
-                //Get the height at the projected point
-                float targetHeight = GetHeightAtWorldPosition(projectedPoint);
-
-                if (flattenGeometry)
-                {
-                    chunk.DrawHeight(localCellPos.x, localCellPos.y, targetHeight, true);
-                }
-                else
-                {
-                    float currentHeight = chunk.heightMap[chunk.GetIndex(localCellPos.y, localCellPos.x)];
-                    float newHeight = Mathf.Lerp(currentHeight, targetHeight, 0.1f);
-                    chunk.DrawHeight(localCellPos.x, localCellPos.y, newHeight, true);
-                }
-            }
-        }
-
-        UpdateDirtyChunks();
-    }
 }
