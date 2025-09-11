@@ -158,11 +158,12 @@ public class MarchingSquaresTerrain : MonoBehaviour
     public NoiseSettings noiseSettings;
     public Texture2D heightMap;
     
-    public int selectedTool;
-    public TerrainTool[] tools;
-    public TerrainTool currentTool;
-    public TerrainTool lastTool;
-
+    #if UNITY_EDITOR
+        public int selectedTool;
+        public TerrainTool[] tools;
+        public TerrainTool currentTool;
+        public TerrainTool lastTool;
+    #endif
     public int id = -100;
 
     public Mesh detailMesh;
