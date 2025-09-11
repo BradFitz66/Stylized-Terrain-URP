@@ -1,4 +1,6 @@
-﻿using System;
+﻿#if UNITY_EDITOR
+
+using System;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEditor;
@@ -70,3 +72,4 @@ public class TerrainTool : ScriptableObject
     {
     }
 }
+#endif
