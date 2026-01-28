@@ -944,6 +944,25 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public List<MarchingSquaresChunk> neighboringChunks = new List<MarchingSquaresChunk>();
 
+    void Awake()
+    {
+        var mf = gameObject.GetComponent<MeshFilter>();
+        if (mf == null)
+            mf = gameObject.AddComponent<MeshFilter>();
+
+        var mr = gameObject.GetComponent<MeshRenderer>();
+        if (mr == null)
+            mr = gameObject.AddComponent<MeshRenderer>();
+
+        var mc = gameObject.GetComponent<MeshCollider>();
+        if (mc == null)
+            mc = gameObject.AddComponent<MeshCollider>();
+
+        if (terrain == null)
+            terrain = GetComponentInParent<MarchingSquaresTerrain>();
+
+        RegenerateMesh();
+    }
 
     public void InitializeTerrain(bool shouldRegenerate = true)
     {
@@ -984,12 +1003,12 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     public void RegenerateMesh()
     {
-        mesh.Clear();
+        mesh?.Clear();
 
         GenerateTerrainCells();
 
-        var mf = gameObject.GetComponent<MeshFilter>();
-        var mc = gameObject.GetComponent<MeshCollider>();
+        var mf = gameObject.GetComponent<MeshFilter>() ?? gameObject.AddComponent<MeshFilter>();
+        var mc = gameObject.GetComponent<MeshCollider>() ?? gameObject.AddComponent<MeshCollider>();
         
         mesh.RecalculateNormals(45f);
         mf.sharedMesh = mesh;
@@ -1005,6 +1024,8 @@ public class MarchingSquaresChunk : MonoBehaviour
     {
 		//Mark this area on the profiler
         Profiler.BeginSample("Chunk Generation");
+        heightMap = heightMap ?? new float[terrain.dimensions.z * terrain.dimensions.x];
+        colorMap = colorMap ?? new float4[terrain.dimensions.z * terrain.dimensions.x];
         GenerateChunkJob job = new GenerateChunkJob()
         {
             //Data
@@ -1060,8 +1081,11 @@ public class MarchingSquaresChunk : MonoBehaviour
         
         foreach (var t in _colors)
             colorCache.Add(new Color(t.x, t.y, t.z, t.w));
-
-
+        
+        mesh = new Mesh
+        {
+            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
+        };
         mesh.SetVertices<float3>(_vertices);
         mesh.SetNormals<float3>(_normals);
         mesh.SetColors<float4>(_colors);

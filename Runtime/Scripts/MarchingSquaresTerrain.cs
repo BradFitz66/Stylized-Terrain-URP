@@ -734,11 +734,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
         _chunkAddMarker.Begin();
         var chunkCoords = new Vector2Int(chunkX, chunkY);
         var newChunk = new GameObject("Chunk " + chunkCoords);
-
+        newChunk.transform.parent = transform;
         var chunk = newChunk.AddComponent<MarchingSquaresChunk>();
-        var mf = newChunk.AddComponent<MeshFilter>();
-        var mr = newChunk.AddComponent<MeshRenderer>();
-        var mc = newChunk.AddComponent<MeshCollider>();
+        var mf = newChunk.GetComponent<MeshFilter>() ?? newChunk.AddComponent<MeshFilter>();
+        var mr = newChunk.GetComponent<MeshRenderer>() ?? newChunk.AddComponent<MeshRenderer>();
+        var mc = newChunk.GetComponent<MeshCollider>() ?? newChunk.AddComponent<MeshCollider>();
         mr.material = terrainMaterial;
         newChunk.layer = gameObject.layer;
         
