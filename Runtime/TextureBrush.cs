@@ -18,6 +18,7 @@ public class TextureBrush : TerrainTool
     private static ProfilerMarker _collectCellsInnerMarker = new ProfilerMarker("Collect Cells Inner _ Texture Brush");
     [FormerlySerializedAs("Layers")] [SerializeField]
     private Texture2D[] layers;
+    private float[] layerColorVariationMultipliers = new float[4] {1,1,1,1};
     private GUIContent[] _textureContent;
 
     private bool _mouseDown;
@@ -134,6 +135,8 @@ public class TextureBrush : TerrainTool
         _labelStyle = new GUIStyle();
         if (layers == null || layers.Length < 4)
             layers = new Texture2D[4];
+        if (layerColorVariationMultipliers == null || layerColorVariationMultipliers.Length < 4)
+            layerColorVariationMultipliers = new float[4] {1,1,1,1};
 
         _textureContent = new GUIContent[4]
         {
@@ -157,6 +160,12 @@ public class TextureBrush : TerrainTool
             mat?.SetTexture("_Ground2", layers[1]);
             mat?.SetTexture("_Ground3", layers[2]);
             mat?.SetTexture("_Ground4", layers[3]);
+            
+            mat?.SetFloat("_Layer1ColorVariationMultiplier", layerColorVariationMultipliers[0]);
+            mat?.SetFloat("_Layer2ColorVariationMultiplier", layerColorVariationMultipliers[1]);
+            mat?.SetFloat("_Layer3ColorVariationMultiplier", layerColorVariationMultipliers[2]);
+            mat?.SetFloat("_Layer4ColorVariationMultiplier", layerColorVariationMultipliers[3]);
+            Debug.Log("Updated material layers on " + r.gameObject.name);
         }
     }
 
@@ -272,13 +281,21 @@ public class TextureBrush : TerrainTool
             Texture2D tex = (Texture2D)EditorGUILayout.ObjectField("", layers[i], typeof(Texture2D), false, GUILayout.MaxWidth(64));
             if (GUILayout.Toggle(_selectedTexture == i, _textureContent[i]))
                 _selectedTexture = i;
-
+            //Field to control color variation for this layer
+            GUILayout.Label("Variation");
+            float mult = EditorGUILayout.FloatField(new GUIContent("","Color variation multiplier"),layerColorVariationMultipliers[i], GUILayout.MaxWidth(32));
             EditorGUILayout.EndVertical();
             if (tex != layers[i])
             {
                 layers[i] = tex;
                 UpdateMaterialLayers(layers);
             }
+            if (mult != layerColorVariationMultipliers[i])
+            {
+                layerColorVariationMultipliers[i] = mult;
+                UpdateMaterialLayers(layers);
+            }
+            EditorGUILayout.Space(32);
         }
         GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();

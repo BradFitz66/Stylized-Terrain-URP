@@ -18,6 +18,10 @@ Shader "STE/Terrain" {
         [HideInInspector]_Ground2("Texture 2", 2D) = "white" {}
         [HideInInspector]_Ground3("Texture 3", 2D) = "white" {}
         [HideInInspector]_Ground4("Texture 4", 2D) = "white" {}
+        [HideInInspector]_Layer1ColorVariationMultiplier("Layer 1 Color Variation Multiplier", Float) = 1.0
+        [HideInInspector]_Layer2ColorVariationMultiplier("Layer 2 Color Variation Multiplier", Float) = 1.0
+        [HideInInspector]_Layer3ColorVariationMultiplier("Layer 3 Color Variation Multiplier", Float) = 1.0
+        [HideInInspector]_Layer4ColorVariationMultiplier("Layer 4 Color Variation Multiplier", Float) = 1.0
 
         _RockNoise("Rock Noise", 3D) = "white" {}
 
@@ -71,6 +75,10 @@ Shader "STE/Terrain" {
                 sampler2D _Ground2;
                 sampler2D _Ground3;
                 sampler2D _Ground4;
+                float _Layer1ColorVariationMultiplier;
+                float _Layer2ColorVariationMultiplier;
+                float _Layer3ColorVariationMultiplier;
+                float _Layer4ColorVariationMultiplier;
 
                 sampler3D _RockNoise;
                 float4 _RockNoise_ST;
@@ -84,6 +92,13 @@ Shader "STE/Terrain" {
                 float _CloudDensity;
                 float _CloudBrightness;
                 float _CloudVerticalSpeed;
+
+                float _ColorNoiseScale;
+                float _ColorNoiseIntensity;
+                float _ColorNoiseFrequency;
+                float _ColorNoiseOctaves; 
+                float _ColorNoiseSeed; 
+                float2 _ColorNoiseOffset;
             CBUFFER_END
 
             struct Attributes
@@ -194,6 +209,7 @@ Shader "STE/Terrain" {
 
                 float mask = clamp(sumEdge + IsWall(IN.uv_MainTex),0,1.0);
 
+                float variation = Cloud(IN.positionWS.xz, _ColorNoiseScale, 0, float2(0,0), _ColorNoiseIntensity, 0);
 
 
                 float4 layer0 = float4(0.5,0.5,0.5,0.5);
@@ -201,8 +217,17 @@ Shader "STE/Terrain" {
                 float4 layer2 = TerrainLayer(IN.positionWS.xyz,IN.normalWS.xyz,layer1,_Ground2,vertColor.g,1);
                 float4 layer3 = TerrainLayer(IN.positionWS.xyz,IN.normalWS.xyz,layer2,_Ground3,vertColor.b,1);
                 float4 layer4 = TerrainLayer(IN.positionWS.xyz,IN.normalWS.xyz,layer3,_Ground4,vertColor.a,1);
-
-                float4 color = lerp(layer4,rockColor,mask) * _Diffuse;
+                
+                float layer0Variation = 0;
+                float layer1Variation = lerp(0, 1.0, _Layer1ColorVariationMultiplier) * vertColor.r;
+                float layer2Variation = lerp(0, 1.0, _Layer2ColorVariationMultiplier) * vertColor.g;
+                float layer3Variation = lerp(0, 1.0, _Layer3ColorVariationMultiplier) * vertColor.b;
+                float layer4Variation = lerp(0, 1.0, _Layer4ColorVariationMultiplier) * vertColor.a;
+                
+                float variationMask = layer0Variation + layer1Variation + layer2Variation + layer3Variation + layer4Variation;
+                variationMask = clamp(variationMask, 0, 1.0);
+                float finalVariation = toonRamp(clamp(variation,0,.5) * variationMask,4, 0, 0);
+                float4 color = lerp(layer4,rockColor,mask) * _Diffuse * (1-finalVariation);
 
                 CloudNoiseSettings cloudSettings;
                 cloudSettings.Scale = _CloudScale;

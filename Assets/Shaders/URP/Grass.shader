@@ -79,6 +79,9 @@ Shader "Instanced/Grass" {
                 float _CloudDensity;
                 float _CloudBrightness;
                 float _CloudVerticalSpeed;
+
+                float _ColorNoiseScale;
+                float _ColorNoiseIntensity;
             CBUFFER_END
 
             struct Attributes
@@ -237,7 +240,11 @@ Shader "Instanced/Grass" {
 
                 float3 worldPos = IN.positionWS + float3(0,-IN.normalOffset,0);
                 float4 albedo = tex2D(_MainTex, IN.uv_MainTex) * _Diffuse;
+                float variation = Cloud(IN.positionWS.xz, _ColorNoiseScale, 0, float2(0,0), _ColorNoiseIntensity, 0);
+                float finalVariation = toonRamp(clamp(variation,0,.5),4, 0, 0);
 
+                albedo *= (1-finalVariation);
+                
                 CloudNoiseSettings cloudSettings;
                 cloudSettings.Scale = _CloudScale;
                 cloudSettings.Speed = float2(_CloudSpeedX, _CloudSpeedY);

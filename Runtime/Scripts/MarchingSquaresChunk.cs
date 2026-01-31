@@ -1102,7 +1102,7 @@ public class MarchingSquaresChunk : MonoBehaviour
 
     }
 
-    public void GenerateHeightmap(NoiseSettings ns,Texture2D heightmap = null)
+    public void GenerateHeightmap(TerrainNoiseSettings ns,Texture2D heightmap = null)
     {
         for (var z = 0; z < terrain.dimensions.z; z++)
         {
@@ -1112,7 +1112,7 @@ public class MarchingSquaresChunk : MonoBehaviour
                 LibNoise.Generator.Perlin perlin = new LibNoise.Generator.Perlin(
                     ns.frequency,
                     ns.lacunarity,
-                    ns.persistence,
+                    0,
                     ns.octaves,
                     ns.seed,
                     LibNoise.QualityMode.High

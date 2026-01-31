@@ -22,6 +22,7 @@ public class MarchingSquaresTerrainEditor : Editor
     private SerializedProperty _selectedToolIndex;
     private SerializedProperty _terrainMaterial;
     private SerializedProperty _noiseSettings;
+    private SerializedProperty _colorNoiseSettings;
     private SerializedProperty _heightBanding;
     private SerializedProperty _detailDensity;
     private SerializedProperty _cloudSettings;
@@ -49,7 +50,8 @@ public class MarchingSquaresTerrainEditor : Editor
         _terrainMaterial = serializedObject.FindProperty("terrainMaterial");
         _lastTool = serializedObject.FindProperty("lastTool");
         _currentTool = serializedObject.FindProperty("currentTool");
-        _noiseSettings = serializedObject.FindProperty("noiseSettings");
+        _noiseSettings = serializedObject.FindProperty("terrainNoiseSettings");
+        _colorNoiseSettings = serializedObject.FindProperty("colorNoiseSettings");
         _heightBanding = serializedObject.FindProperty("heightBanding");
         _detailDensity = serializedObject.FindProperty("detailDensity");
         _cloudSettings = serializedObject.FindProperty("cloudSettings");
@@ -118,6 +120,10 @@ public class MarchingSquaresTerrainEditor : Editor
             }
             EditorGUI.indentLevel--;
         }
+        
+        EditorGUILayout.PropertyField(_colorNoiseSettings, true);
+        
+        
         EditorGUILayout.PropertyField(_cloudSettings);
 
         _showGenerateGrassSettings = EditorGUILayout.Foldout(_showGenerateGrassSettings, new GUIContent("Grass settings"));

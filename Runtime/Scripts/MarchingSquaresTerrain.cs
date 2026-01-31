@@ -36,26 +36,36 @@ public enum NoiseMixMode
 }
 
 [Serializable]
-public struct NoiseSettings
+public class TerrainNoiseSettings
 {
-    public float scale;
-    public double frequency;
-    public double amplitude;
-    public double lacunarity;
-    public double persistence;
-    public int octaves;
-    public Vector2 offset;
-    public int seed;
-    public NoiseMixMode mixMode;
+    public float scale = 32f;
+    public double frequency = 1.0;
+    public double amplitude = 1.0;
+    public double lacunarity = 2.0;
+    public int octaves = 4;
+    public Vector2 offset = Vector2.zero;
+    public int seed = 42;
+    public NoiseMixMode mixMode = NoiseMixMode.Replace;
 }
 
 [Serializable]
-public struct CloudSettings : IEquatable<CloudSettings>
+public class ColorNoiseSettings
 {
-    public float density;
-    public Vector3 speed;
-    public float scale;
-    public float brightness;
+    public float scale = 16f;
+    public float intensity = 1f;
+    public double frequency = 1.0;
+    public int octaves = 4;
+    public Vector2 offset = Vector2.zero;
+    public int seed = 42;
+}
+
+[Serializable]
+public class CloudSettings : IEquatable<CloudSettings>
+{
+    public float density = 0.1f;
+    public Vector3 speed = new Vector3(4f,4f,0.005f);
+    public float scale = 0.05f;
+    public float brightness = 0f;
     
     
     public bool Equals(CloudSettings other)
@@ -115,8 +125,9 @@ public class MarchingSquaresTerrain : MonoBehaviour
     private bool _useCulling;
     private uint[] _args = new uint[] { 0, 0, 0, 0, 0 };
 
+    private int _lastColorNoiseSettings;    
+    private int _lastCloudSettings;
     
-    private CloudSettings _lastCloudSettings;
 
     private MaterialPropertyBlock _mpb;
     
@@ -155,7 +166,8 @@ public class MarchingSquaresTerrain : MonoBehaviour
 
 
     public Texture2D[] groundTextures = new Texture2D[4];
-    public NoiseSettings noiseSettings;
+    [FormerlySerializedAs("noiseSettings")] public TerrainNoiseSettings terrainNoiseSettings;
+    public ColorNoiseSettings colorNoiseSettings;
     public Texture2D heightMap;
     
     #if UNITY_EDITOR
@@ -252,12 +264,17 @@ public class MarchingSquaresTerrain : MonoBehaviour
             if (Application.isPlaying)
                 _camera = Camera.main;
         }
-
-        if (!_lastCloudSettings.Equals(cloudSettings))
+        //Check if hash of cloud settings changed
+        
+        if (cloudSettings.GetHashCode() != _lastCloudSettings)
         {
-            _lastCloudSettings = cloudSettings;
+            _lastCloudSettings = cloudSettings.GetHashCode();
             UpdateClouds();
         }
+
+        UpdateColorNoiseSettings();
+        
+        
 
         // if (_camera != null && _useCulling)
         //     Dispatch(transform.position, _camera.transform.position, _camera.projectionMatrix * _camera.worldToCameraMatrix);
@@ -369,10 +386,11 @@ public class MarchingSquaresTerrain : MonoBehaviour
             return;
         }
         var data = instancingData.GetDetailData();
-
+        
         if (_argsBuffer == null)
             InitializeBuffers();
-        
+        _argsBuffer.Release();
+        _argsBuffer = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
         if (!_useCulling)
             _args[1] = (uint)data.Length;
         
@@ -845,7 +863,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
             {
 
                 chunk.Value.GenerateHeightmap(
-                    noiseSettings
+                    terrainNoiseSettings
                 );
             }
         }
@@ -875,7 +893,7 @@ public class MarchingSquaresTerrain : MonoBehaviour
                         //Get the height from the heightmap
                         var height = heightMap.GetPixelBilinear(heightMapPos.x, heightMapPos.y).r;
                         
-                        chunk.Value.heightMap[idx] = height * noiseSettings.scale;
+                        chunk.Value.heightMap[idx] = height * terrainNoiseSettings.scale;
                     }
                 }
                 chunk.Value.isDirty = true;
@@ -1258,6 +1276,16 @@ public class MarchingSquaresTerrain : MonoBehaviour
         Shader.SetGlobalFloat("_CloudScale", cloudSettings.scale);
         Shader.SetGlobalFloat("_CloudBrightness", cloudSettings.brightness);
         Shader.SetGlobalFloat("_CloudVerticalSpeed", cloudSettings.speed.z);
+    }
+    
+    public void UpdateColorNoiseSettings()
+    {
+        Shader.SetGlobalFloat( "_ColorNoiseScale"    , colorNoiseSettings.scale);
+        Shader.SetGlobalFloat( "_ColorNoiseIntensity", colorNoiseSettings.intensity);
+        Shader.SetGlobalFloat( "_ColorNoiseFrequency", (float)colorNoiseSettings.frequency);
+        Shader.SetGlobalInt(   "_ColorNoiseOctaves"  , colorNoiseSettings.octaves);
+        Shader.SetGlobalInt(   "_ColorNoiseSeed"     , colorNoiseSettings.seed);
+        Shader.SetGlobalVector("_ColorNoiseOffset"   ,colorNoiseSettings.offset);
     }
     public float GetHeightAtWorldPosition(Vector3 cellWorld)
     {
