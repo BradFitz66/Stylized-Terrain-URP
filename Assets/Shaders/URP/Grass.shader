@@ -186,9 +186,8 @@ Shader "Instanced/Grass" {
                 float3 scale = float3(length(detailToWorld[0].xyz), length(detailToWorld[1].xyz), length(detailToWorld[2].xyz));
                 float4 worldPos = mul(detailToWorld, float4(0.0,0.0,0.0,1.0));
 
-                float2 samplePos = worldPos.xz/scale.xz;
-                samplePos.x += (_Time.x * 10);
-                float windSample = tex2Dlod(_WaveGradient, float4(samplePos, 0, 0));
+                
+                float windSample = tex2Dlod(_WaveGradient, float4(worldPos.xz, 0, 0));
                 float heightFactor = IN.positionOS.y > 0.25;
 
                 float3 viewPos = TransformWorldToView(worldPos) + (IN.positionOS.xyz + sin(1.0*windSample)*heightFactor) * float3(scale.x,scale.y,1.0);
